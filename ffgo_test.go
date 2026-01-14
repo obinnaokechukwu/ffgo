@@ -1665,6 +1665,174 @@ func TestHWDecoder(t *testing.T) {
 	t.Logf("Decoded %d frames using hardware acceleration", frameCount)
 }
 
+func TestSeekPrecise(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	// Open video decoder
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Fatalf("Failed to open video decoder: %v", err)
+	}
+
+	// Test seeking to middle of file
+	duration := decoder.Duration()
+	t.Logf("Duration: %v", duration)
+
+	midPoint := duration / 2
+	if err := decoder.SeekPrecise(midPoint); err != nil {
+		t.Fatalf("SeekPrecise failed: %v", err)
+	}
+
+	// Decode a frame to verify seek worked
+	frame, err := decoder.DecodeVideo()
+	if err != nil {
+		t.Fatalf("Failed to decode after seek: %v", err)
+	}
+	if frame == nil {
+		t.Error("Got nil frame after seek")
+	}
+
+	t.Logf("Successfully seeked to %v and decoded a frame", midPoint)
+}
+
+func TestSeekToFrame(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	// Get total frames estimate
+	totalFrames := decoder.TotalFrames()
+	t.Logf("Estimated total frames: %d", totalFrames)
+
+	if totalFrames <= 0 {
+		t.Skip("Cannot determine total frames")
+		return
+	}
+
+	// Open video decoder
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Fatalf("Failed to open video decoder: %v", err)
+	}
+
+	// Seek to frame 10
+	targetFrame := int64(10)
+	if targetFrame >= totalFrames {
+		targetFrame = totalFrames / 2
+	}
+
+	if err := decoder.SeekToFrame(targetFrame); err != nil {
+		t.Fatalf("SeekToFrame failed: %v", err)
+	}
+
+	// Decode a frame
+	frame, err := decoder.DecodeVideo()
+	if err != nil {
+		t.Fatalf("Failed to decode after frame seek: %v", err)
+	}
+	if frame == nil {
+		t.Error("Got nil frame after seek")
+	}
+
+	t.Logf("Successfully seeked to frame %d", targetFrame)
+}
+
+func TestExtractThumbnail(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	duration := decoder.Duration()
+	midPoint := duration / 2
+
+	thumbnail, err := decoder.ExtractThumbnail(midPoint)
+	if err != nil {
+		t.Fatalf("ExtractThumbnail failed: %v", err)
+	}
+
+	if thumbnail == nil {
+		t.Error("Got nil thumbnail")
+	}
+
+	t.Logf("Extracted thumbnail at %v", midPoint)
+}
+
+func TestExtractThumbnails(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	// Extract 3 thumbnails
+	thumbnails, err := decoder.ExtractThumbnails(3)
+	if err != nil {
+		t.Fatalf("ExtractThumbnails failed: %v", err)
+	}
+
+	if len(thumbnails) != 3 {
+		t.Errorf("Expected 3 thumbnails, got %d", len(thumbnails))
+	}
+
+	// Free the thumbnails
+	for i, th := range thumbnails {
+		if th == nil {
+			t.Errorf("Thumbnail %d is nil", i)
+		} else {
+			FrameFree(&th)
+		}
+	}
+
+	t.Logf("Extracted %d thumbnails", len(thumbnails))
+}
+
+func TestTotalFrames(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	totalFrames := decoder.TotalFrames()
+	t.Logf("Total frames: %d", totalFrames)
+
+	// The test video is 1 second at 30fps, so should be ~30 frames
+	if totalFrames < 20 || totalFrames > 40 {
+		t.Logf("Warning: unexpected frame count %d for 1s@30fps video", totalFrames)
+	}
+}
+
 func TestStreamMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
