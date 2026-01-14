@@ -352,7 +352,7 @@ func (e *Encoder) setupAudio(cfg *AudioEncoderConfig) error {
 
 	// Configure audio codec context
 	avcodec.SetCtxSampleRate(e.audioCodecCtx, int32(sampleRate))
-	avcodec.SetCtxChannels(e.audioCodecCtx, int32(channels))
+	avcodec.SetCtxChannelLayout(e.audioCodecCtx, int32(channels)) // FFmpeg 5.1+ requires ch_layout
 	avcodec.SetCtxSampleFmt(e.audioCodecCtx, int32(SampleFormatFLTP)) // AAC requires FLTP
 	avcodec.SetCtxBitRate(e.audioCodecCtx, bitrate)
 	avcodec.SetCtxTimeBase(e.audioCodecCtx, 1, int32(sampleRate))

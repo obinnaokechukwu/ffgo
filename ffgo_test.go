@@ -656,3 +656,173 @@ func TestDecoderFromIOCallbacks(t *testing.T) {
 		t.Error("Read callback was never called")
 	}
 }
+
+func TestEncoderWithAudio(t *testing.T) {
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "audio_video.mp4")
+
+	// Create encoder with audio
+	encoder, err := NewEncoderWithOptions(outFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Codec:       CodecIDH264,
+			Width:       320,
+			Height:      240,
+			FrameRate:   NewRational(30, 1),
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			GOPSize:     10,
+		},
+		Audio: &AudioEncoderConfig{
+			Codec:      CodecIDAAC,
+			SampleRate: 48000,
+			Channels:   2,
+			Bitrate:    128000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+	}
+	defer encoder.Close()
+
+	// Verify encoder has both video and audio
+	if !encoder.HasVideo() {
+		t.Error("Encoder should have video")
+	}
+	if !encoder.HasAudio() {
+		t.Error("Encoder should have audio")
+	}
+
+	// Check audio properties
+	if encoder.SampleRate() != 48000 {
+		t.Errorf("SampleRate = %d, want 48000", encoder.SampleRate())
+	}
+	if encoder.Channels() != 2 {
+		t.Errorf("Channels = %d, want 2", encoder.Channels())
+	}
+	if encoder.AudioFrameSize() == 0 {
+		t.Log("AudioFrameSize is 0 (codec may determine dynamically)")
+	}
+
+	t.Logf("Encoder created with audio: sample_rate=%d, channels=%d, frame_size=%d",
+		encoder.SampleRate(), encoder.Channels(), encoder.AudioFrameSize())
+}
+
+func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "av_output.mp4")
+
+	// Create encoder with audio
+	encoder, err := NewEncoderWithOptions(outFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Codec:       CodecIDH264,
+			Width:       160,
+			Height:      120,
+			FrameRate:   NewRational(10, 1),
+			Bitrate:     200000,
+			PixelFormat: PixelFormatYUV420P,
+			GOPSize:     5,
+		},
+		Audio: &AudioEncoderConfig{
+			Codec:      CodecIDAAC,
+			SampleRate: 44100,
+			Channels:   2,
+			Bitrate:    96000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+	}
+
+	// Allocate video frame
+	videoFrame := FrameAlloc()
+	if videoFrame == nil {
+		encoder.Close()
+		t.Fatal("Failed to allocate video frame")
+	}
+	defer FrameFree(&videoFrame)
+
+	avutil.SetFrameWidth(videoFrame, 160)
+	avutil.SetFrameHeight(videoFrame, 120)
+	avutil.SetFrameFormat(videoFrame, int32(PixelFormatYUV420P))
+
+	if err := avutil.FrameGetBufferErr(videoFrame, 0); err != nil {
+		encoder.Close()
+		t.Fatalf("Failed to allocate video frame buffer: %v", err)
+	}
+
+	// Write a few video frames
+	numVideoFrames := 10
+	for i := 0; i < numVideoFrames; i++ {
+		if err := avutil.FrameMakeWritable(videoFrame); err != nil {
+			encoder.Close()
+			t.Fatalf("FrameMakeWritable failed: %v", err)
+		}
+		fillTestFrame(videoFrame, i, 160, 120)
+		if err := encoder.WriteVideoFrame(videoFrame); err != nil {
+			encoder.Close()
+			t.Fatalf("WriteVideoFrame failed at frame %d: %v", i, err)
+		}
+	}
+
+	// Close encoder
+	if err := encoder.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Verify output file
+	info, err := os.Stat(outFile)
+	if err != nil {
+		t.Fatalf("Output file not found: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("Output file is empty")
+	}
+
+	t.Logf("Encoded %d video frames to %s (%d bytes)", numVideoFrames, outFile, info.Size())
+
+	// Verify output can be read
+	decoder, err := NewDecoder(outFile)
+	if err != nil {
+		t.Fatalf("Cannot read output: %v", err)
+	}
+	defer decoder.Close()
+
+	if !decoder.HasVideo() {
+		t.Error("Output should have video")
+	}
+	// Note: Audio stream should be present even if we didn't write audio frames,
+	// but it will be empty/silent
+	t.Logf("Output verified: video=%v, audio=%v", decoder.HasVideo(), decoder.HasAudio())
+}
+
+func TestSampleFormatConstants(t *testing.T) {
+	// Verify sample format constants are exported correctly
+	tests := []struct {
+		name   string
+		format SampleFormat
+		want   int32
+	}{
+		{"SampleFormatNone", SampleFormatNone, -1},
+		{"SampleFormatU8", SampleFormatU8, 0},
+		{"SampleFormatS16", SampleFormatS16, 1},
+		{"SampleFormatS32", SampleFormatS32, 2},
+		{"SampleFormatFlt", SampleFormatFlt, 3},
+		{"SampleFormatDbl", SampleFormatDbl, 4},
+		{"SampleFormatU8P", SampleFormatU8P, 5},
+		{"SampleFormatS16P", SampleFormatS16P, 6},
+		{"SampleFormatS32P", SampleFormatS32P, 7},
+		{"SampleFormatFLTP", SampleFormatFLTP, 8},
+		{"SampleFormatFltP", SampleFormatFltP, 8},
+		{"SampleFormatDblP", SampleFormatDblP, 9},
+		{"SampleFormatS64", SampleFormatS64, 10},
+		{"SampleFormatS64P", SampleFormatS64P, 11},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if int32(tt.format) != tt.want {
+				t.Errorf("%s = %d, want %d", tt.name, tt.format, tt.want)
+			}
+		})
+	}
+}

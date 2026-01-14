@@ -37,6 +37,10 @@ var (
 
 	avStrerror func(errnum int32, errbuf unsafe.Pointer, errbufSize uintptr) int32
 
+	// Channel layout functions (FFmpeg 5.1+)
+	avChannelLayoutDefault func(chLayout unsafe.Pointer, nbChannels int32)
+	avChannelLayoutCopy    func(dst, src unsafe.Pointer) int32
+
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
 	bindingsRegistered bool
@@ -77,6 +81,10 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avDictFree, lib, "av_dict_free")
 
 	purego.RegisterLibFunc(&avStrerror, lib, "av_strerror")
+
+	// Channel layout functions (FFmpeg 5.1+)
+	purego.RegisterLibFunc(&avChannelLayoutDefault, lib, "av_channel_layout_default")
+	purego.RegisterLibFunc(&avChannelLayoutCopy, lib, "av_channel_layout_copy")
 
 	bindingsRegistered = true
 }
@@ -414,4 +422,25 @@ func ErrorString(errnum int32) string {
 		}
 	}
 	return string(buf)
+}
+
+// ChannelLayoutDefault sets the default channel layout for the given number of channels.
+// chLayout must be a pointer to an AVChannelLayout struct (e.g., embedded in AVCodecContext).
+func ChannelLayoutDefault(chLayout unsafe.Pointer, nbChannels int32) {
+	if avChannelLayoutDefault == nil || chLayout == nil {
+		return
+	}
+	avChannelLayoutDefault(chLayout, nbChannels)
+}
+
+// ChannelLayoutCopy copies a channel layout from src to dst.
+func ChannelLayoutCopy(dst, src unsafe.Pointer) error {
+	if avChannelLayoutCopy == nil {
+		return nil
+	}
+	ret := avChannelLayoutCopy(dst, src)
+	if ret < 0 {
+		return NewError(ret, "av_channel_layout_copy")
+	}
+	return nil
 }
