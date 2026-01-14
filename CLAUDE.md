@@ -20,6 +20,7 @@
 - ✅ LICENSE - MIT License
 - ✅ docs/user-guide.md - Complete API documentation
 - ✅ docs/internal-design.md - Architecture specification
+- ✅ docs/gap-analysis.md - Comprehensive FFmpeg vs ffgo feature comparison
 - ✅ CLAUDE.md - Project memory (this file)
 
 ### API Compliance
@@ -35,6 +36,36 @@
 - **Key dependency**: github.com/ebitengine/purego v0.9.1
 - **FFmpeg versions supported**: 4.x - 7.x (tested with 6.x)
 - **Platforms**: Linux/macOS/Windows on amd64/arm64 (no iOS/Android)
+
+### Feature Coverage (vs Full FFmpeg)
+See docs/gap-analysis.md for comprehensive comparison.
+
+**What works well** (~95% coverage):
+- Core video decode/encode/transcode pipeline
+- Format conversion (MP4, MKV, AVI, MOV, etc.)
+- Resolution/scaling changes with quality control
+- Custom I/O integration (io.Reader/Writer)
+- Basic seeking (backward keyframe)
+- Hardware acceleration hooks (CUDA, VA-API, VideoToolbox)
+
+**Partially implemented** (basic support only):
+- Hardware acceleration (hooks exist, manual setup required)
+- Metadata handling (low-level dict API only)
+- Multi-stream handling (can read video OR audio)
+- Codec options (basic bitrate/GOP only, no presets)
+
+**Not implemented** (requires external tools or contributions):
+- Filter graphs (avfilter) - no video effects, watermarking, overlays
+- Audio resampling (swresample) - no sample rate/channel conversion
+- Subtitle support - no decode/encode/render
+- Device I/O (avdevice) - no camera/screen capture
+- Bitstream filters - no packet-level transformations
+- Advanced encoding (presets, multi-pass, CRF, profile/level control)
+- Stream copy mode (fast remuxing without decode)
+- Network protocols configuration (RTMP, RTSP, HLS)
+- Audio encoding (stubbed, returns error)
+
+**Overall estimate**: ~35-40% of full FFmpeg capability coverage
 
 ### Struct Offsets (FFmpeg 7.x / avutil 59.x)
 These were verified using offsetof():

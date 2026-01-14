@@ -137,6 +137,7 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o myapp
 
 - **[User Guide](docs/user-guide.md)** - Complete API documentation with examples
 - **[Internal Design](docs/internal-design.md)** - Architecture and implementation details
+- **[Gap Analysis](docs/gap-analysis.md)** - FFmpeg vs ffgo feature comparison
 - **[Examples](examples/)** - Working code examples
 
 ## Architecture
