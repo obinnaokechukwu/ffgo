@@ -1875,8 +1875,998 @@ var (
 
 ---
 
+## 18. Audio Resampling (swresample)
+
+### 18.1 Library Dependencies
+
+| Library | Required | Notes |
+|---------|----------|-------|
+| libswresample | Yes | Must be loaded after libavutil |
+
+**Loading order**: avutil → swresample → avcodec → avformat → swscale
+
+### 18.2 Function Bindings
+
+```go
+// swresample/swresample.go
+var (
+    swr_alloc              func() unsafe.Pointer
+    swr_alloc_set_opts2    func(ps *unsafe.Pointer, outChLayout unsafe.Pointer, outFmt int32, outRate int32,
+                                inChLayout unsafe.Pointer, inFmt int32, inRate int32,
+                                logOffset int32, logCtx unsafe.Pointer) int32
+    swr_init               func(s unsafe.Pointer) int32
+    swr_free               func(s *unsafe.Pointer)
+    swr_convert            func(s unsafe.Pointer, out, in unsafe.Pointer, outCount, inCount int32) int32
+    swr_convert_frame      func(s unsafe.Pointer, output, input unsafe.Pointer) int32
+    swr_get_delay          func(s unsafe.Pointer, base int64) int64
+    swr_get_out_samples    func(s unsafe.Pointer, inSamples int32) int32
+    swr_is_initialized     func(s unsafe.Pointer) int32
+
+    swresample_version     func() uint32
+)
+```
+
+**purego Compatibility**: All functions ✓ (no variadics, no struct returns)
+
+### 18.3 AVChannelLayout Handling
+
+FFmpeg 5.1+ uses `AVChannelLayout` struct (24 bytes) instead of `uint64` channel mask.
+
+```go
+// AVChannelLayout struct layout (FFmpeg 5.1+)
+// Offset 0:  order (AVChannelOrder enum, 4 bytes)
+// Offset 4:  nb_channels (int, 4 bytes)
+// Offset 8:  u.mask (uint64) or u.map (pointer)
+// Offset 16: opaque (pointer)
+
+// For purego: Always pass by pointer, never by value
+type AVChannelLayout struct {
+    Order      int32
+    NbChannels int32
+    Mask       uint64  // Union with map pointer
+    Opaque     unsafe.Pointer
+}
+
+// Helper to create layout from mask
+func channelLayoutFromMask(mask uint64, channels int) []byte {
+    buf := make([]byte, 24)
+    binary.LittleEndian.PutUint32(buf[0:4], 0)        // AV_CHANNEL_ORDER_NATIVE
+    binary.LittleEndian.PutUint32(buf[4:8], uint32(channels))
+    binary.LittleEndian.PutUint64(buf[8:16], mask)
+    return buf
+}
+```
+
+### 18.4 High-Level Resampler Implementation
+
+```go
+// Resampler wraps SwrContext for audio format conversion
+type Resampler struct {
+    ctx         unsafe.Pointer  // SwrContext*
+    srcFormat   AudioFormat
+    dstFormat   AudioFormat
+    srcLayout   []byte          // AVChannelLayout buffer (kept alive)
+    dstLayout   []byte          // AVChannelLayout buffer (kept alive)
+    outputFrame unsafe.Pointer  // Reusable output frame
+    closed      bool
+}
+
+func NewResampler(src, dst AudioFormat) (*Resampler, error) {
+    r := &Resampler{
+        srcFormat: src,
+        dstFormat: dst,
+    }
+
+    // Create channel layouts
+    r.srcLayout = channelLayoutFromMask(uint64(src.ChannelLayout), src.Channels)
+    r.dstLayout = channelLayoutFromMask(uint64(dst.ChannelLayout), dst.Channels)
+
+    // Allocate context
+    var ctx unsafe.Pointer
+    ret := swr_alloc_set_opts2(
+        &ctx,
+        unsafe.Pointer(&r.dstLayout[0]), int32(dst.SampleFormat), int32(dst.SampleRate),
+        unsafe.Pointer(&r.srcLayout[0]), int32(src.SampleFormat), int32(src.SampleRate),
+        0, nil,
+    )
+    if ret < 0 {
+        return nil, newError(ret, "swr_alloc_set_opts2")
+    }
+
+    runtime.KeepAlive(r.srcLayout)
+    runtime.KeepAlive(r.dstLayout)
+
+    ret = swr_init(ctx)
+    if ret < 0 {
+        swr_free(&ctx)
+        return nil, newError(ret, "swr_init")
+    }
+
+    r.ctx = ctx
+    r.outputFrame = av_frame_alloc()
+
+    runtime.SetFinalizer(r, (*Resampler).cleanup)
+    return r, nil
+}
+
+func (r *Resampler) Resample(frame *Frame) (*Frame, error) {
+    if r.closed {
+        return nil, ErrClosed
+    }
+
+    av_frame_unref(r.outputFrame)
+
+    ret := swr_convert_frame(r.ctx, r.outputFrame, frame.ptr)
+    if ret < 0 {
+        return nil, newError(ret, "swr_convert_frame")
+    }
+
+    // Check if output has samples
+    nbSamples := getFrameNbSamples(r.outputFrame)
+    if nbSamples == 0 {
+        return nil, nil  // Need more input
+    }
+
+    // Create new frame with copy of data
+    outFrame := &Frame{ptr: av_frame_alloc()}
+    av_frame_ref(outFrame.ptr, r.outputFrame)
+    return outFrame, nil
+}
+
+func (r *Resampler) Close() error {
+    if r.closed {
+        return nil
+    }
+    r.closed = true
+    r.cleanup()
+    return nil
+}
+
+func (r *Resampler) cleanup() {
+    if r.outputFrame != nil {
+        av_frame_free(&r.outputFrame)
+    }
+    if r.ctx != nil {
+        swr_free(&r.ctx)
+    }
+}
+```
+
+---
+
+## 19. Filter Graphs (avfilter)
+
+### 19.1 Library Dependencies
+
+| Library | Required | Notes |
+|---------|----------|-------|
+| libavfilter | Yes | Must be loaded after avcodec |
+
+**Loading order**: avutil → swresample → avcodec → avformat → swscale → avfilter
+
+### 19.2 Function Bindings
+
+```go
+// avfilter/avfilter.go
+var (
+    // Graph management
+    avfilter_graph_alloc           func() unsafe.Pointer
+    avfilter_graph_free            func(graph *unsafe.Pointer)
+    avfilter_graph_config          func(graphctx unsafe.Pointer, log_ctx unsafe.Pointer) int32
+    avfilter_graph_parse2          func(graph unsafe.Pointer, filters string,
+                                        inputs, outputs *unsafe.Pointer) int32
+
+    // Filter lookup
+    avfilter_get_by_name           func(name string) unsafe.Pointer
+
+    // Filter creation
+    avfilter_graph_create_filter   func(filt_ctx *unsafe.Pointer, filt unsafe.Pointer,
+                                        name, args string, opaque, graph_ctx unsafe.Pointer) int32
+
+    // Filter linking
+    avfilter_link                  func(src unsafe.Pointer, srcpad uint32,
+                                        dst unsafe.Pointer, dstpad uint32) int32
+
+    // Buffer source/sink
+    av_buffersrc_add_frame_flags   func(ctx unsafe.Pointer, frame unsafe.Pointer, flags int32) int32
+    av_buffersink_get_frame_flags  func(ctx unsafe.Pointer, frame unsafe.Pointer, flags int32) int32
+
+    // InOut management
+    avfilter_inout_alloc           func() unsafe.Pointer
+    avfilter_inout_free            func(inout *unsafe.Pointer)
+
+    avfilter_version               func() uint32
+)
+
+// Buffer source flags
+const (
+    AV_BUFFERSRC_FLAG_KEEP_REF = 8  // Keep reference to frame
+    AV_BUFFERSRC_FLAG_PUSH     = 4  // Push frame immediately
+)
+
+// Buffer sink flags
+const (
+    AV_BUFFERSINK_FLAG_PEEK      = 1  // Peek without consuming
+    AV_BUFFERSINK_FLAG_NO_REQUEST = 2  // Don't request frame
+)
+```
+
+**purego Compatibility**: All functions ✓
+
+**Note**: `avfilter_graph_parse_ptr` is variadic - use `avfilter_graph_parse2` instead.
+
+### 19.3 Filter Graph Implementation
+
+```go
+// FilterGraph represents a filter processing pipeline
+type FilterGraph struct {
+    graph        unsafe.Pointer  // AVFilterGraph*
+    bufferSrc    unsafe.Pointer  // AVFilterContext* for buffersrc
+    bufferSink   unsafe.Pointer  // AVFilterContext* for buffersink
+    inputFrame   unsafe.Pointer  // Reusable input frame reference
+    outputFrame  unsafe.Pointer  // Reusable output frame
+    isVideo      bool
+    srcFormat    FilterFormat
+    closed       bool
+}
+
+// FilterFormat describes filter input/output format
+type FilterFormat struct {
+    // Video
+    Width       int
+    Height      int
+    PixelFormat PixelFormat
+    TimeBase    Rational
+    FrameRate   Rational
+    SAR         Rational  // Sample aspect ratio
+
+    // Audio
+    SampleRate    int
+    Channels      int
+    ChannelLayout ChannelLayout
+    SampleFormat  SampleFormat
+}
+
+func NewVideoFilterGraph(filters string, width, height int, pixFmt PixelFormat) (*FilterGraph, error) {
+    g := &FilterGraph{
+        isVideo: true,
+        srcFormat: FilterFormat{
+            Width:       width,
+            Height:      height,
+            PixelFormat: pixFmt,
+            TimeBase:    NewRational(1, 90000),
+        },
+    }
+
+    // Allocate graph
+    g.graph = avfilter_graph_alloc()
+    if g.graph == nil {
+        return nil, ErrOutOfMemory
+    }
+
+    // Create buffer source args
+    srcArgs := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+        width, height, int(pixFmt), 1, 90000, 1, 1)
+
+    // Create buffersrc
+    buffersrc := avfilter_get_by_name("buffer")
+    if buffersrc == nil {
+        avfilter_graph_free(&g.graph)
+        return nil, errors.New("buffer filter not found")
+    }
+
+    ret := avfilter_graph_create_filter(&g.bufferSrc, buffersrc, "in", srcArgs, nil, g.graph)
+    if ret < 0 {
+        avfilter_graph_free(&g.graph)
+        return nil, newError(ret, "create buffersrc")
+    }
+
+    // Create buffersink
+    buffersink := avfilter_get_by_name("buffersink")
+    if buffersink == nil {
+        avfilter_graph_free(&g.graph)
+        return nil, errors.New("buffersink filter not found")
+    }
+
+    ret = avfilter_graph_create_filter(&g.bufferSink, buffersink, "out", "", nil, g.graph)
+    if ret < 0 {
+        avfilter_graph_free(&g.graph)
+        return nil, newError(ret, "create buffersink")
+    }
+
+    // Parse filter string
+    var inputs, outputs unsafe.Pointer
+    ret = avfilter_graph_parse2(g.graph, filters, &inputs, &outputs)
+    if ret < 0 {
+        avfilter_graph_free(&g.graph)
+        return nil, newError(ret, "parse filter graph")
+    }
+
+    // Link buffersrc to inputs, outputs to buffersink
+    // (simplified - actual implementation needs to handle AVFilterInOut chain)
+
+    // Configure graph
+    ret = avfilter_graph_config(g.graph, nil)
+    if ret < 0 {
+        avfilter_graph_free(&g.graph)
+        return nil, newError(ret, "configure filter graph")
+    }
+
+    g.outputFrame = av_frame_alloc()
+    runtime.SetFinalizer(g, (*FilterGraph).cleanup)
+    return g, nil
+}
+
+func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
+    if g.closed {
+        return nil, ErrClosed
+    }
+
+    // Push frame to buffersrc
+    ret := av_buffersrc_add_frame_flags(g.bufferSrc, frame.ptr, AV_BUFFERSRC_FLAG_KEEP_REF)
+    if ret < 0 {
+        return nil, newError(ret, "buffersrc add frame")
+    }
+    runtime.KeepAlive(frame)
+
+    // Pull frames from buffersink
+    var frames []*Frame
+    for {
+        av_frame_unref(g.outputFrame)
+        ret = av_buffersink_get_frame_flags(g.bufferSink, g.outputFrame, 0)
+        if ret == AVERROR_EAGAIN || ret == AVERROR_EOF {
+            break
+        }
+        if ret < 0 {
+            return frames, newError(ret, "buffersink get frame")
+        }
+
+        outFrame := &Frame{ptr: av_frame_alloc()}
+        av_frame_ref(outFrame.ptr, g.outputFrame)
+        frames = append(frames, outFrame)
+    }
+
+    return frames, nil
+}
+
+func (g *FilterGraph) Close() error {
+    if g.closed {
+        return nil
+    }
+    g.closed = true
+    g.cleanup()
+    return nil
+}
+
+func (g *FilterGraph) cleanup() {
+    if g.outputFrame != nil {
+        av_frame_free(&g.outputFrame)
+    }
+    if g.graph != nil {
+        avfilter_graph_free(&g.graph)
+    }
+}
+```
+
+---
+
+## 20. Advanced Codec Options
+
+### 20.1 Option Application via av_opt_set
+
+FFmpeg codec options are set through the AVOptions API.
+
+```go
+// av_opt_set functions
+var (
+    av_opt_set        func(obj unsafe.Pointer, name, val string, search_flags int32) int32
+    av_opt_set_int    func(obj unsafe.Pointer, name string, val int64, search_flags int32) int32
+    av_opt_set_double func(obj unsafe.Pointer, name string, val float64, search_flags int32) int32
+)
+
+const (
+    AV_OPT_SEARCH_CHILDREN = 1  // Search in child objects
+)
+```
+
+### 20.2 VideoEncoderConfig Extended
+
+```go
+type VideoEncoderConfig struct {
+    // Existing fields
+    Codec     CodecID
+    Width     int
+    Height    int
+    FrameRate Rational
+    Bitrate   int64
+
+    // NEW: Preset and tuning
+    Preset    EncoderPreset
+    Tune      EncoderTune
+
+    // NEW: Profile and level
+    Profile   VideoProfile
+    Level     VideoLevel
+
+    // NEW: Rate control
+    RateControl RateControlMode
+    CRF         int    // 0-51 for x264, 0-63 for x265
+    CQP         int    // Constant QP
+    MinBitrate  int64
+    MaxBitrate  int64
+    BufferSize  int64  // VBV buffer
+
+    // NEW: GOP structure
+    GOPSize        int
+    MaxBFrames     int
+    BFrameStrategy int
+    RefFrames      int
+
+    // NEW: Quality
+    Threads int
+
+    // NEW: Codec-specific options
+    CodecOptions map[string]string
+}
+
+// Apply options to codec context
+func applyVideoOptions(ctx unsafe.Pointer, config *VideoEncoderConfig) error {
+    // Basic settings applied via struct field writes
+    setCodecContextInt(ctx, offsetWidth, config.Width)
+    setCodecContextInt(ctx, offsetHeight, config.Height)
+    setCodecContextInt64(ctx, offsetBitRate, config.Bitrate)
+    setCodecContextInt(ctx, offsetGOPSize, config.GOPSize)
+    setCodecContextInt(ctx, offsetMaxBFrames, config.MaxBFrames)
+
+    // Advanced options via av_opt_set
+    if config.Preset != "" {
+        av_opt_set(ctx, "preset", string(config.Preset), AV_OPT_SEARCH_CHILDREN)
+    }
+    if config.Tune != "" {
+        av_opt_set(ctx, "tune", string(config.Tune), AV_OPT_SEARCH_CHILDREN)
+    }
+    if config.Profile != "" {
+        av_opt_set(ctx, "profile", string(config.Profile), AV_OPT_SEARCH_CHILDREN)
+    }
+    if config.Level != "" {
+        av_opt_set(ctx, "level", string(config.Level), AV_OPT_SEARCH_CHILDREN)
+    }
+
+    // Rate control
+    switch config.RateControl {
+    case RateControlCRF:
+        av_opt_set_int(ctx, "crf", int64(config.CRF), AV_OPT_SEARCH_CHILDREN)
+    case RateControlCQP:
+        av_opt_set_int(ctx, "qp", int64(config.CQP), AV_OPT_SEARCH_CHILDREN)
+    }
+
+    // Threading
+    if config.Threads > 0 {
+        setCodecContextInt(ctx, offsetThreadCount, config.Threads)
+    }
+
+    // Custom options
+    for key, value := range config.CodecOptions {
+        av_opt_set(ctx, key, value, AV_OPT_SEARCH_CHILDREN)
+    }
+
+    return nil
+}
+```
+
+---
+
+## 21. Audio Encoding
+
+### 21.1 Implementation
+
+Audio encoding follows the same pattern as video but with audio-specific frame handling.
+
+```go
+// Complete audio encoder implementation
+func (e *Encoder) WriteAudioFrame(frame *Frame) error {
+    if e.audioCodecCtx == nil {
+        return ErrNoAudioStream
+    }
+
+    // Send frame to encoder
+    ret := avcodec_send_frame(e.audioCodecCtx, frame.ptr)
+    if ret < 0 && ret != AVERROR_EAGAIN {
+        return newError(ret, "avcodec_send_frame (audio)")
+    }
+    runtime.KeepAlive(frame)
+
+    // Receive and write packets
+    for {
+        ret := avcodec_receive_packet(e.audioCodecCtx, e.audioPacket)
+        if ret == AVERROR_EAGAIN || ret == AVERROR_EOF {
+            break
+        }
+        if ret < 0 {
+            return newError(ret, "avcodec_receive_packet (audio)")
+        }
+
+        // Rescale timestamps
+        av_packet_rescale_ts(e.audioPacket, e.audioTimeBase, e.audioStreamTimeBase)
+
+        // Set stream index
+        setPacketStreamIndex(e.audioPacket, e.audioStreamIndex)
+
+        // Write packet
+        ret = av_interleaved_write_frame(e.formatCtx, e.audioPacket)
+        if ret < 0 {
+            return newError(ret, "av_interleaved_write_frame (audio)")
+        }
+
+        av_packet_unref(e.audioPacket)
+    }
+
+    return nil
+}
+```
+
+### 21.2 Frame Size Handling
+
+Many audio encoders (AAC, MP3, Opus) require fixed frame sizes.
+
+```go
+// AudioFrameBuffer handles frame size requirements
+type AudioFrameBuffer struct {
+    encoder      *Encoder
+    sampleBuffer []byte
+    sampleCount  int
+    frameSize    int        // Required samples per frame
+    format       SampleFormat
+    channels     int
+    pts          int64
+}
+
+func NewAudioFrameBuffer(encoder *Encoder, frameSize int, format SampleFormat, channels int) *AudioFrameBuffer {
+    bytesPerSample := getSampleFormatSize(format) * channels
+    return &AudioFrameBuffer{
+        encoder:      encoder,
+        sampleBuffer: make([]byte, frameSize*bytesPerSample),
+        frameSize:    frameSize,
+        format:       format,
+        channels:     channels,
+    }
+}
+
+func (b *AudioFrameBuffer) Write(frame *Frame) error {
+    // Copy samples to buffer
+    samples := frame.Data(0)
+    nb := frame.NbSamples()
+
+    // ... accumulate samples, encode when frameSize reached
+    return nil
+}
+```
+
+---
+
+## 22. Stream Copy Mode
+
+### 22.1 Implementation
+
+Stream copy writes packets directly without decoding/encoding.
+
+```go
+// Encoder with stream copy support
+type Encoder struct {
+    // ... existing fields
+
+    copyVideoStream bool
+    copyAudioStream bool
+    videoTimeBase   Rational  // Source video time base
+    audioTimeBase   Rational  // Source audio time base
+}
+
+// WritePacket writes a packet directly (for stream copy)
+func (e *Encoder) WritePacket(packet *Packet) error {
+    streamIndex := packet.StreamIndex()
+
+    var timeBase Rational
+    if streamIndex == e.videoStreamIndex {
+        timeBase = e.videoTimeBase
+    } else if streamIndex == e.audioStreamIndex {
+        timeBase = e.audioTimeBase
+    } else {
+        return ErrInvalidStream
+    }
+
+    // Rescale timestamps to output stream time base
+    outputTimeBase := e.getStreamTimeBase(streamIndex)
+    av_packet_rescale_ts(packet.ptr, timeBase.toAVRational(), outputTimeBase.toAVRational())
+
+    // Write interleaved
+    ret := av_interleaved_write_frame(e.formatCtx, packet.ptr)
+    if ret < 0 {
+        return newError(ret, "av_interleaved_write_frame")
+    }
+
+    return nil
+}
+```
+
+---
+
+## 23. Bitstream Filters
+
+### 23.1 Function Bindings
+
+```go
+var (
+    av_bsf_get_by_name      func(name string) unsafe.Pointer
+    av_bsf_alloc            func(filter unsafe.Pointer, ctx *unsafe.Pointer) int32
+    av_bsf_init             func(ctx unsafe.Pointer) int32
+    av_bsf_send_packet      func(ctx unsafe.Pointer, pkt unsafe.Pointer) int32
+    av_bsf_receive_packet   func(ctx unsafe.Pointer, pkt unsafe.Pointer) int32
+    av_bsf_free             func(ctx *unsafe.Pointer)
+)
+```
+
+### 23.2 Implementation
+
+```go
+type BitstreamFilter struct {
+    ctx      unsafe.Pointer  // AVBSFContext*
+    outPkt   unsafe.Pointer  // Output packet
+    closed   bool
+}
+
+func NewBitstreamFilter(name string, codecPar *CodecParameters) (*BitstreamFilter, error) {
+    filter := av_bsf_get_by_name(name)
+    if filter == nil {
+        return nil, fmt.Errorf("bitstream filter not found: %s", name)
+    }
+
+    var ctx unsafe.Pointer
+    ret := av_bsf_alloc(filter, &ctx)
+    if ret < 0 {
+        return nil, newError(ret, "av_bsf_alloc")
+    }
+
+    // Copy codec parameters to BSF context
+    avcodec_parameters_copy(getBSFCodecPar(ctx), codecPar.ptr)
+
+    ret = av_bsf_init(ctx)
+    if ret < 0 {
+        av_bsf_free(&ctx)
+        return nil, newError(ret, "av_bsf_init")
+    }
+
+    return &BitstreamFilter{
+        ctx:    ctx,
+        outPkt: av_packet_alloc(),
+    }, nil
+}
+
+func (f *BitstreamFilter) Filter(packet *Packet) ([]*Packet, error) {
+    ret := av_bsf_send_packet(f.ctx, packet.ptr)
+    if ret < 0 {
+        return nil, newError(ret, "av_bsf_send_packet")
+    }
+
+    var packets []*Packet
+    for {
+        av_packet_unref(f.outPkt)
+        ret := av_bsf_receive_packet(f.ctx, f.outPkt)
+        if ret == AVERROR_EAGAIN || ret == AVERROR_EOF {
+            break
+        }
+        if ret < 0 {
+            return packets, newError(ret, "av_bsf_receive_packet")
+        }
+
+        pkt := &Packet{ptr: av_packet_alloc()}
+        av_packet_ref(pkt.ptr, f.outPkt)
+        packets = append(packets, pkt)
+    }
+
+    return packets, nil
+}
+
+func (f *BitstreamFilter) Close() error {
+    if f.closed {
+        return nil
+    }
+    f.closed = true
+    av_packet_free(&f.outPkt)
+    av_bsf_free(&f.ctx)
+    return nil
+}
+```
+
+---
+
+## 24. Hardware Acceleration (Complete)
+
+### 24.1 Function Bindings
+
+```go
+var (
+    av_hwdevice_ctx_create    func(device_ctx *unsafe.Pointer, dtype int32,
+                                   device string, opts unsafe.Pointer, flags int32) int32
+    av_hwdevice_ctx_alloc     func(dtype int32) unsafe.Pointer
+    av_hwframe_ctx_alloc      func(device_ctx unsafe.Pointer) unsafe.Pointer
+    av_hwframe_ctx_init       func(ref unsafe.Pointer) int32
+    av_hwframe_transfer_data  func(dst, src unsafe.Pointer, flags int32) int32
+    av_hwframe_get_buffer     func(hwframe_ctx unsafe.Pointer, frame unsafe.Pointer, flags int32) int32
+    av_buffer_ref             func(buf unsafe.Pointer) unsafe.Pointer
+    av_buffer_unref           func(buf *unsafe.Pointer)
+)
+
+// Hardware device types
+const (
+    AV_HWDEVICE_TYPE_NONE         = 0
+    AV_HWDEVICE_TYPE_VDPAU        = 1
+    AV_HWDEVICE_TYPE_CUDA         = 2
+    AV_HWDEVICE_TYPE_VAAPI        = 3
+    AV_HWDEVICE_TYPE_DXVA2        = 4
+    AV_HWDEVICE_TYPE_QSV          = 5
+    AV_HWDEVICE_TYPE_VIDEOTOOLBOX = 6
+    AV_HWDEVICE_TYPE_D3D11VA      = 7
+    AV_HWDEVICE_TYPE_DRM          = 8
+    AV_HWDEVICE_TYPE_OPENCL       = 9
+    AV_HWDEVICE_TYPE_MEDIACODEC   = 10
+    AV_HWDEVICE_TYPE_VULKAN       = 11
+)
+```
+
+### 24.2 HWDevice Implementation
+
+```go
+type HWDevice struct {
+    deviceType int32
+    deviceCtx  unsafe.Pointer  // AVBufferRef*
+    devicePath string
+}
+
+func NewHWDevice(deviceType HWDeviceType, device string) (*HWDevice, error) {
+    var deviceCtx unsafe.Pointer
+
+    ret := av_hwdevice_ctx_create(&deviceCtx, int32(deviceType), device, nil, 0)
+    if ret < 0 {
+        return nil, newError(ret, "av_hwdevice_ctx_create")
+    }
+
+    return &HWDevice{
+        deviceType: int32(deviceType),
+        deviceCtx:  deviceCtx,
+        devicePath: device,
+    }, nil
+}
+
+func (d *HWDevice) Close() error {
+    if d.deviceCtx != nil {
+        av_buffer_unref(&d.deviceCtx)
+        d.deviceCtx = nil
+    }
+    return nil
+}
+```
+
+### 24.3 Hardware Frame Transfer
+
+```go
+// TransferFrameToSystem copies HW frame to system memory
+func TransferFrameToSystem(hwFrame *Frame) (*Frame, error) {
+    swFrame := av_frame_alloc()
+    if swFrame == nil {
+        return nil, ErrOutOfMemory
+    }
+
+    ret := av_hwframe_transfer_data(swFrame, hwFrame.ptr, 0)
+    if ret < 0 {
+        av_frame_free(&swFrame)
+        return nil, newError(ret, "av_hwframe_transfer_data")
+    }
+
+    // Copy metadata
+    av_frame_copy_props(swFrame, hwFrame.ptr)
+
+    return &Frame{ptr: swFrame}, nil
+}
+```
+
+---
+
+## 25. Subtitle Support
+
+### 25.1 Function Bindings
+
+```go
+var (
+    avcodec_decode_subtitle2  func(avctx unsafe.Pointer, sub unsafe.Pointer,
+                                   got_sub *int32, pkt unsafe.Pointer) int32
+    avcodec_encode_subtitle   func(avctx unsafe.Pointer, buf unsafe.Pointer,
+                                   buf_size int32, sub unsafe.Pointer) int32
+    avsubtitle_free           func(sub unsafe.Pointer)
+)
+
+// AVSubtitle structure offsets
+const (
+    offsetSubFormat    = 0   // uint16
+    offsetSubStartTime = 4   // uint32
+    offsetSubEndTime   = 8   // uint32
+    offsetSubNumRects  = 12  // uint32
+    offsetSubRects     = 16  // AVSubtitleRect**
+    offsetSubPTS       = 24  // int64
+)
+```
+
+### 25.2 Subtitle Implementation
+
+```go
+type Subtitle struct {
+    Type      SubtitleType
+    StartTime time.Duration
+    EndTime   time.Duration
+    Text      string
+    ASS       string
+    Rects     []SubtitleRect
+}
+
+type SubtitleRect struct {
+    X, Y          int
+    Width, Height int
+    Data          []byte
+}
+
+type SubtitleDecoder struct {
+    codecCtx unsafe.Pointer
+    subtitle []byte  // AVSubtitle buffer
+}
+
+func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
+    codec := avcodec_find_decoder(stream.CodecID())
+    if codec == nil {
+        return nil, ErrDecoderNotFound
+    }
+
+    ctx := avcodec_alloc_context3(codec)
+    if ctx == nil {
+        return nil, ErrOutOfMemory
+    }
+
+    avcodec_parameters_to_context(ctx, stream.CodecParameters())
+
+    ret := avcodec_open2(ctx, codec, nil)
+    if ret < 0 {
+        avcodec_free_context(&ctx)
+        return nil, newError(ret, "avcodec_open2")
+    }
+
+    // Allocate AVSubtitle (sizeof varies by FFmpeg version, use safe size)
+    return &SubtitleDecoder{
+        codecCtx: ctx,
+        subtitle: make([]byte, 256),
+    }, nil
+}
+
+func (d *SubtitleDecoder) Decode(packet *Packet) (*Subtitle, error) {
+    var gotSub int32
+
+    ret := avcodec_decode_subtitle2(d.codecCtx, unsafe.Pointer(&d.subtitle[0]),
+        &gotSub, packet.ptr)
+    if ret < 0 {
+        return nil, newError(ret, "avcodec_decode_subtitle2")
+    }
+
+    if gotSub == 0 {
+        return nil, nil
+    }
+
+    // Parse AVSubtitle structure
+    sub := d.parseSubtitle()
+
+    // Free FFmpeg's internal data
+    avsubtitle_free(unsafe.Pointer(&d.subtitle[0]))
+
+    return sub, nil
+}
+
+func (d *SubtitleDecoder) parseSubtitle() *Subtitle {
+    ptr := unsafe.Pointer(&d.subtitle[0])
+
+    format := *(*uint16)(unsafe.Add(ptr, offsetSubFormat))
+    startTime := *(*uint32)(unsafe.Add(ptr, offsetSubStartTime))
+    endTime := *(*uint32)(unsafe.Add(ptr, offsetSubEndTime))
+
+    return &Subtitle{
+        Type:      SubtitleType(format),
+        StartTime: time.Duration(startTime) * time.Millisecond,
+        EndTime:   time.Duration(endTime) * time.Millisecond,
+        // Parse rects for bitmap, text for ASS/SRT
+    }
+}
+```
+
+---
+
+## Appendix C: New Library Function Bindings
+
+### C.1 libswresample
+
+```go
+var (
+    swr_alloc              func() unsafe.Pointer
+    swr_alloc_set_opts2    func(ps *unsafe.Pointer, outChLayout, inChLayout unsafe.Pointer,
+                                outFmt, inFmt int32, outRate, inRate int32,
+                                logOffset int32, logCtx unsafe.Pointer) int32
+    swr_init               func(s unsafe.Pointer) int32
+    swr_free               func(s *unsafe.Pointer)
+    swr_convert            func(s unsafe.Pointer, out, in unsafe.Pointer, outCount, inCount int32) int32
+    swr_convert_frame      func(s unsafe.Pointer, output, input unsafe.Pointer) int32
+    swr_get_delay          func(s unsafe.Pointer, base int64) int64
+    swr_get_out_samples    func(s unsafe.Pointer, inSamples int32) int32
+    swresample_version     func() uint32
+)
+```
+
+### C.2 libavfilter
+
+```go
+var (
+    avfilter_graph_alloc         func() unsafe.Pointer
+    avfilter_graph_free          func(graph *unsafe.Pointer)
+    avfilter_graph_config        func(graphctx, log_ctx unsafe.Pointer) int32
+    avfilter_graph_parse2        func(graph unsafe.Pointer, filters string,
+                                      inputs, outputs *unsafe.Pointer) int32
+    avfilter_get_by_name         func(name string) unsafe.Pointer
+    avfilter_graph_create_filter func(filt_ctx *unsafe.Pointer, filt unsafe.Pointer,
+                                      name, args string, opaque, graph_ctx unsafe.Pointer) int32
+    avfilter_link                func(src unsafe.Pointer, srcpad uint32,
+                                      dst unsafe.Pointer, dstpad uint32) int32
+    av_buffersrc_add_frame_flags func(ctx, frame unsafe.Pointer, flags int32) int32
+    av_buffersink_get_frame_flags func(ctx, frame unsafe.Pointer, flags int32) int32
+    avfilter_inout_alloc         func() unsafe.Pointer
+    avfilter_inout_free          func(inout *unsafe.Pointer)
+    avfilter_version             func() uint32
+)
+```
+
+### C.3 Hardware Acceleration
+
+```go
+var (
+    av_hwdevice_ctx_create   func(device_ctx *unsafe.Pointer, dtype int32,
+                                  device string, opts unsafe.Pointer, flags int32) int32
+    av_hwframe_transfer_data func(dst, src unsafe.Pointer, flags int32) int32
+    av_buffer_ref            func(buf unsafe.Pointer) unsafe.Pointer
+    av_buffer_unref          func(buf *unsafe.Pointer)
+)
+```
+
+### C.4 Bitstream Filters
+
+```go
+var (
+    av_bsf_get_by_name    func(name string) unsafe.Pointer
+    av_bsf_alloc          func(filter unsafe.Pointer, ctx *unsafe.Pointer) int32
+    av_bsf_init           func(ctx unsafe.Pointer) int32
+    av_bsf_send_packet    func(ctx, pkt unsafe.Pointer) int32
+    av_bsf_receive_packet func(ctx, pkt unsafe.Pointer) int32
+    av_bsf_free           func(ctx *unsafe.Pointer)
+)
+```
+
+### C.5 AV Options
+
+```go
+var (
+    av_opt_set        func(obj unsafe.Pointer, name, val string, search_flags int32) int32
+    av_opt_set_int    func(obj unsafe.Pointer, name string, val int64, search_flags int32) int32
+    av_opt_set_double func(obj unsafe.Pointer, name string, val float64, search_flags int32) int32
+    av_opt_get        func(obj unsafe.Pointer, name string, search_flags int32, out *unsafe.Pointer) int32
+)
+```
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0-draft | 2025-01-14 | Claude | Initial specification |
+| 2.0.0-draft | 2026-01-14 | Claude | Added swresample, avfilter, advanced codec options, audio encoding, stream copy, bitstream filters, hardware acceleration, subtitles |

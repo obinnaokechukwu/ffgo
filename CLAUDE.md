@@ -1,9 +1,14 @@
 # Claude Memory - ffgo Project
 
 ## Current Focus
-**PROJECT COMPLETE** - All implementation, documentation, and gap analysis finished:
+**DESIGN PHASE COMPLETE** - All feature designs documented, ready for implementation:
 
-Latest addition (2026-01-14): Comprehensive gap analysis document added to docs/gap-analysis.md showing ~35-40% FFmpeg capability coverage, with 95% coverage for core video transcode pipelines. This helps users understand what ffgo can and cannot do compared to full FFmpeg.
+Latest update (2026-01-14): Created comprehensive feature designs for ALL missing FFmpeg features. See:
+- docs/feature-designs.md - Full specification-grade designs for 15 new features
+- docs/internal-design.md - Updated with implementation details (sections 18-25, Appendix C)
+- docs/user-guide.md - Updated with user-facing APIs for all new features
+
+All designs account for purego constraints while providing clean, idiomatic Go APIs.
 
 ### Implementation Status
 - ✅ All internal packages (bindings, handles, platform, shim)
@@ -56,18 +61,31 @@ See docs/gap-analysis.md for comprehensive comparison.
 - Multi-stream handling (can read video OR audio)
 - Codec options (basic bitrate/GOP only, no presets)
 
-**Not implemented** (requires external tools or contributions):
-- Filter graphs (avfilter) - no video effects, watermarking, overlays
-- Audio resampling (swresample) - no sample rate/channel conversion
-- Subtitle support - no decode/encode/render
-- Device I/O (avdevice) - no camera/screen capture
-- Bitstream filters - no packet-level transformations
+**Not yet implemented** (DESIGNS COMPLETE - see docs/feature-designs.md):
+- Filter graphs (avfilter) - video effects, watermarking, overlays
+- Audio resampling (swresample) - sample rate/channel conversion
+- Subtitle support - decode/encode/render
+- Device I/O (avdevice) - camera/screen capture
+- Bitstream filters - packet-level transformations
 - Advanced encoding (presets, multi-pass, CRF, profile/level control)
 - Stream copy mode (fast remuxing without decode)
 - Network protocols configuration (RTMP, RTSP, HLS)
 - Audio encoding (stubbed, returns error)
+- Hardware acceleration (complete implementation)
+- Multi-stream muxing
+- Advanced seeking (frame-accurate, byte position)
+- Metadata/chapters handling
+- Image sequences
+- Color space handling
 
-**Overall estimate**: ~35-40% of full FFmpeg capability coverage
+**Overall estimate**: ~35-40% current coverage, targeting 100% after implementation
+
+**Implementation Priority** (from feature-designs.md):
+- P0: Audio Encoding, Audio Resampling (required for transcoding)
+- P1: Advanced Codec Options, Multi-Stream Muxing, Stream Copy
+- P2: Filter Graphs, Hardware Acceleration, Advanced Seeking, Metadata
+- P3: Subtitles, Bitstream Filters, Device I/O, Network Protocols
+- P4: Image Sequences, Color Space
 
 ### Struct Offsets (FFmpeg 7.x / avutil 59.x)
 These were verified using offsetof():
@@ -130,25 +148,31 @@ libSWScale, _ = loadLibrary("swscale", []int{8, 7, 6, 5})
 
 ---
 
-### 2. Feature Completeness - Audio Resampling, Filter Graphs, Subtitles
-**Location**: README.md Roadmap, no implementation in codebase
+### 2. Feature Implementation - All Designs Complete
+**Location**: docs/feature-designs.md, docs/internal-design.md (sections 18-25)
 
-**Issue**: README correctly lists these as unimplemented:
-- [ ] Audio resampling (swresample)
-- [ ] Filter graphs (avfilter)
-- [ ] Subtitle support
+**Status**: All feature designs are complete with specification-grade detail. Ready for implementation.
 
-**Verification**: Grepped codebase - no references to `swresample`, `avfilter`, `SwrContext`, or subtitle APIs.
+**Designed features** (see docs/feature-designs.md):
+1. ✅ Audio Resampling (swresample) - package structure, API, error handling
+2. ✅ Filter Graphs (avfilter) - graph API, common presets, complex filters
+3. ✅ Audio Encoding - frame buffer, codec options
+4. ✅ Advanced Codec Options - presets, CRF, profiles, rate control
+5. ✅ Subtitle Support - decode, encode, burn-in rendering
+6. ✅ Bitstream Filters - packet transformations
+7. ✅ Stream Copy Mode - fast remuxing
+8. ✅ Hardware Acceleration - device management, frame transfer
+9. ✅ Multi-Stream Muxing - multiple audio/subtitle tracks
+10. ✅ Advanced Seeking - frame-accurate, byte position, thumbnails
+11. ✅ Metadata/Chapters - read/write metadata and chapter markers
+12. ✅ Device I/O - camera/microphone/screen capture
+13. ✅ Network Protocols - RTMP, HLS, RTSP configuration
+14. ✅ Image Sequences - read/write image sequences
+15. ✅ Color Space Handling - color space conversion
 
-**Status**: Accurately documented as not implemented. This is OK for current release but should be tracked for future versions.
+**Implementation priority**: See feature-designs.md for P0-P4 priority rankings
 
-**Action items for future**:
-- Add `swresample/` package for audio resampling (sample rate conversion, channel layout changes)
-- Add `avfilter/` package for filter graphs (complex video/audio processing pipelines)
-- Add subtitle decode/encode support to high-level API
-- Add examples demonstrating these features
-
-**Impact**: Users needing audio resampling or filter graphs must use alternative solutions or contribute these features.
+**Action**: Implement features following designs. All purego constraints documented.
 
 ---
 
