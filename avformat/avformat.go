@@ -507,3 +507,74 @@ func GetCodecParSampleRate(par avcodec.Parameters) int32 {
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParSampleRate))
 }
+
+// AVFormatContext output field offsets (for FFmpeg 6.x)
+const (
+	offsetOformat = 16 // AVOutputFormat *oformat
+)
+
+// AVOutputFormat field offsets (for FFmpeg 6.x)
+const (
+	offsetOutputFormatFlags = 44 // int flags
+)
+
+// Output format flag constants
+const (
+	AVFMT_NOFILE       = 0x0001 // No file, can be custom I/O
+	AVFMT_GLOBALHEADER = 0x0040 // Format wants global header
+)
+
+// GetOutputFormat returns the output format from a format context.
+func GetOutputFormat(ctx FormatContext) OutputFormat {
+	if ctx == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetOformat))
+}
+
+// GetOutputFormatFlags returns the flags from an output format.
+func GetOutputFormatFlags(oformat OutputFormat) int32 {
+	if oformat == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(oformat) + offsetOutputFormatFlags))
+}
+
+// NeedsGlobalHeader returns true if the output format needs global header.
+func NeedsGlobalHeader(ctx FormatContext) bool {
+	oformat := GetOutputFormat(ctx)
+	if oformat == nil {
+		return false
+	}
+	flags := GetOutputFormatFlags(oformat)
+	return flags&AVFMT_GLOBALHEADER != 0
+}
+
+// HasNoFile returns true if the output format doesn't need a file (custom I/O).
+func HasNoFile(ctx FormatContext) bool {
+	oformat := GetOutputFormat(ctx)
+	if oformat == nil {
+		return false
+	}
+	flags := GetOutputFormatFlags(oformat)
+	return flags&AVFMT_NOFILE != 0
+}
+
+// SetStreamTimeBase sets the time base for a stream.
+func SetStreamTimeBase(stream Stream, num, den int32) {
+	if stream == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase)) = num
+	*(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase + 4)) = den
+}
+
+// GetStreamTimeBase returns the time base for a stream.
+func GetStreamTimeBase(stream Stream) (num, den int32) {
+	if stream == nil {
+		return 0, 1
+	}
+	num = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase))
+	den = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase + 4))
+	return
+}
