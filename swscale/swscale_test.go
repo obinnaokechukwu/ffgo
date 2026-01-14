@@ -100,7 +100,7 @@ func TestScaleWithFrames(t *testing.T) {
 	avutil.SetFrameFormat(srcFrame, int32(avutil.PixelFormatYUV420P))
 
 	// Allocate buffer for source frame
-	err := avutil.FrameGetBuffer(srcFrame, 0)
+	err := avutil.FrameGetBufferErr(srcFrame, 0)
 	if err != nil {
 		t.Fatalf("Failed to allocate source frame buffer: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestScaleWithFrames(t *testing.T) {
 	avutil.SetFrameFormat(dstFrame, int32(avutil.PixelFormatRGB24))
 
 	// Allocate buffer for destination frame
-	err = avutil.FrameGetBuffer(dstFrame, 0)
+	err = avutil.FrameGetBufferErr(dstFrame, 0)
 	if err != nil {
 		t.Fatalf("Failed to allocate destination frame buffer: %v", err)
 	}

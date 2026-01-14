@@ -121,10 +121,11 @@ func FrameUnref(frame Frame) {
 	avFrameUnref(frame)
 }
 
-// FrameGetBuffer allocates buffers for the frame based on its format/dimensions.
+// FrameGetBufferErr allocates buffers for the frame based on its format/dimensions.
 // The frame must have format, width, height set for video, or
 // format, nb_samples, channel_layout set for audio.
-func FrameGetBuffer(frame Frame, align int32) error {
+// Returns an error if allocation fails.
+func FrameGetBufferErr(frame Frame, align int32) error {
 	if avFrameGetBuffer == nil {
 		return bindings.ErrNotLoaded
 	}
@@ -271,6 +272,48 @@ func SetFrameSampleRate(frame Frame, sampleRate int32) {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetSampleRate)) = sampleRate
+}
+
+// FrameSetSampleRate is an alias for SetFrameSampleRate
+func FrameSetSampleRate(frame Frame, sampleRate int32) {
+	SetFrameSampleRate(frame, sampleRate)
+}
+
+// FrameSetChannels sets the number of audio channels in the frame.
+// Note: In FFmpeg 5.1+, this should be done via AVChannelLayout, but we support legacy mode.
+const offsetChannels = 148 // nb_channels in FFmpeg 5.x+ (via ch_layout.nb_channels)
+
+func FrameSetChannels(frame Frame, channels int32) {
+	if frame == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetChannels)) = channels
+}
+
+// GetFrameChannels returns the number of audio channels.
+func GetFrameChannels(frame Frame) int32 {
+	if frame == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChannels))
+}
+
+// FrameSetFormat is an alias for SetFrameFormat
+func FrameSetFormat(frame Frame, format int32) {
+	SetFrameFormat(frame, format)
+}
+
+// FrameSetNbSamples is an alias for SetFrameNbSamples
+func FrameSetNbSamples(frame Frame, nbSamples int32) {
+	SetFrameNbSamples(frame, nbSamples)
+}
+
+// FrameGetBuffer is the wrapper that returns int for compatibility
+func FrameGetBuffer(frame Frame, align int32) int32 {
+	if avFrameGetBuffer == nil {
+		return -1
+	}
+	return avFrameGetBuffer(frame, align)
 }
 
 // GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.

@@ -191,7 +191,7 @@ var (
 		FrameFree:         avutil.FrameFree,
 		FrameRef:          avutil.FrameRef,
 		FrameUnref:        avutil.FrameUnref,
-		FrameGetBuffer:    avutil.FrameGetBuffer,
+		FrameGetBuffer:    avutil.FrameGetBufferErr,
 		FrameMakeWritable: avutil.FrameMakeWritable,
 		GetFrameWidth:     avutil.GetFrameWidth,
 		GetFrameHeight:    avutil.GetFrameHeight,

@@ -311,3 +311,13 @@ func HasSWScale() bool {
 func HasFFShim() bool {
 	return libFFShim != 0
 }
+
+// LoadLibrary loads a library by name, trying the specified versions.
+// This is exported for use by optional packages like swresample and avfilter.
+func LoadLibrary(name string, versions []int) (uintptr, error) {
+	// Ensure core libraries are loaded first
+	if err := Load(); err != nil {
+		return 0, err
+	}
+	return loadLibrary(name, versions)
+}

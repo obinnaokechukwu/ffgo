@@ -131,7 +131,7 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 	avutil.SetFrameFormat(s.dstFrame, int32(cfg.DstFormat))
 
 	// Allocate buffer
-	if err := avutil.FrameGetBuffer(s.dstFrame, 0); err != nil {
+	if err := avutil.FrameGetBufferErr(s.dstFrame, 0); err != nil {
 		avutil.FrameFree(&s.dstFrame)
 		swscale.FreeContext(ctx)
 		return nil, err
