@@ -380,8 +380,22 @@ const (
 	offsetStreams         = 48  // AVStream **streams
 	offsetDuration        = 72  // int64_t duration
 	offsetBitRate         = 80  // int64_t bit_rate
+	offsetNbChapters      = 164 // unsigned int nb_chapters
+	offsetChapters        = 168 // AVChapter **chapters
 	offsetContextMetadata = 176 // AVDictionary *metadata
 )
+
+// AVChapter struct field offsets (for FFmpeg 6.x)
+const (
+	offsetChapterID          = 0  // int64_t id (actually stored as int64_t in FFmpeg 6.x)
+	offsetChapterTimeBase    = 8  // AVRational time_base (num at +8, den at +12)
+	offsetChapterStart       = 16 // int64_t start
+	offsetChapterEnd         = 24 // int64_t end
+	offsetChapterMetadata    = 32 // AVDictionary *metadata
+)
+
+// Chapter is an opaque FFmpeg AVChapter pointer.
+type Chapter = unsafe.Pointer
 
 // GetNumStreams returns the number of streams in the context.
 func GetNumStreams(ctx FormatContext) int {
@@ -760,6 +774,73 @@ func SetStreamMetadata(stream Stream, key, value string) error {
 		return avutil.NewError(ret, "av_dict_set")
 	}
 	return nil
+}
+
+// GetNumChapters returns the number of chapters in the context.
+func GetNumChapters(ctx FormatContext) int {
+	if ctx == nil {
+		return 0
+	}
+	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbChapters)))
+}
+
+// GetChapter returns the chapter at the given index.
+func GetChapter(ctx FormatContext, index int) Chapter {
+	if ctx == nil || index < 0 {
+		return nil
+	}
+	numChapters := GetNumChapters(ctx)
+	if index >= numChapters {
+		return nil
+	}
+	chaptersPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetChapters))
+	if chaptersPtr == nil {
+		return nil
+	}
+	chapterArray := (*[1024]unsafe.Pointer)(chaptersPtr)
+	return chapterArray[index]
+}
+
+// GetChapterID returns the chapter ID.
+func GetChapterID(ch Chapter) int64 {
+	if ch == nil {
+		return 0
+	}
+	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterID))
+}
+
+// GetChapterTimeBase returns the time base (numerator and denominator) of the chapter.
+func GetChapterTimeBase(ch Chapter) (num, den int32) {
+	if ch == nil {
+		return 0, 1
+	}
+	num = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase))
+	den = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase + 4))
+	return num, den
+}
+
+// GetChapterStart returns the start time of the chapter in time_base units.
+func GetChapterStart(ch Chapter) int64 {
+	if ch == nil {
+		return 0
+	}
+	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterStart))
+}
+
+// GetChapterEnd returns the end time of the chapter in time_base units.
+func GetChapterEnd(ch Chapter) int64 {
+	if ch == nil {
+		return 0
+	}
+	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterEnd))
+}
+
+// GetChapterMetadata returns the metadata dictionary from a chapter.
+func GetChapterMetadata(ch Chapter) avutil.Dictionary {
+	if ch == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ch) + offsetChapterMetadata))
 }
 
 // DictGet retrieves a dictionary entry.
