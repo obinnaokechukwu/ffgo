@@ -92,11 +92,12 @@ type StreamInfo struct {
 	Type       MediaType
 	CodecID    CodecID
 	CodecName  string
-	Width      int // Video only
-	Height     int // Video only
+	Width      int         // Video only
+	Height     int         // Video only
 	PixelFmt   PixelFormat // Video only
-	SampleRate int // Audio only
-	Channels   int // Audio only
+	FrameRate  Rational    // Video only - frames per second
+	SampleRate int         // Audio only
+	Channels   int         // Audio only
 	TimeBase   Rational
 	Duration   int64 // In time_base units
 	BitRate    int64

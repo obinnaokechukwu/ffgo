@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avformat"
@@ -16,10 +17,12 @@ import (
 type Decoder struct {
 	mu sync.Mutex
 
-	formatCtx avformat.FormatContext
-	codecCtx  avcodec.Context
-	packet    avcodec.Packet
-	frame     avutil.Frame
+	formatCtx     avformat.FormatContext
+	videoCodecCtx avcodec.Context
+	audioCodecCtx avcodec.Context
+	codecCtx      avcodec.Context // Deprecated: use videoCodecCtx
+	packet        avcodec.Packet
+	frame         avutil.Frame
 
 	videoStreamIdx int
 	audioStreamIdx int
@@ -27,7 +30,9 @@ type Decoder struct {
 	videoInfo *StreamInfo
 	audioInfo *StreamInfo
 
-	closed bool
+	videoDecoderOpen bool
+	audioDecoderOpen bool
+	closed           bool
 }
 
 // DecoderOptions configures decoder behavior.
@@ -110,18 +115,27 @@ func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
 	codecType := avformat.GetCodecParType(codecPar)
 	codecID := avformat.GetCodecParCodecID(codecPar)
 
+	// Get time base
+	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+
 	info := &StreamInfo{
-		Index:   streamIdx,
-		Type:    codecType,
-		CodecID: codecID,
+		Index:    streamIdx,
+		Type:     codecType,
+		CodecID:  codecID,
+		TimeBase: avutil.NewRational(tbNum, tbDen),
 	}
 
 	if codecType == avutil.MediaTypeVideo {
 		info.Width = int(avformat.GetCodecParWidth(codecPar))
 		info.Height = int(avformat.GetCodecParHeight(codecPar))
 		info.PixelFmt = PixelFormat(avformat.GetCodecParFormat(codecPar))
+
+		// Get frame rate
+		frNum, frDen := avformat.GetStreamAvgFrameRate(stream)
+		info.FrameRate = avutil.NewRational(frNum, frDen)
 	} else if codecType == avutil.MediaTypeAudio {
 		info.SampleRate = int(avformat.GetCodecParSampleRate(codecPar))
+		info.Channels = int(avformat.GetCodecParChannels(codecPar))
 	}
 
 	return info
@@ -157,12 +171,21 @@ func (d *Decoder) NumStreams() int {
 	return avformat.GetNumStreams(d.formatCtx)
 }
 
-// Duration returns the duration in microseconds.
+// Duration returns the duration in microseconds (AV_TIME_BASE units).
 func (d *Decoder) Duration() int64 {
 	if d.formatCtx == nil {
 		return 0
 	}
 	return avformat.GetDuration(d.formatCtx)
+}
+
+// DurationTime returns the duration as time.Duration.
+func (d *Decoder) DurationTime() time.Duration {
+	us := d.Duration()
+	if us <= 0 {
+		return 0
+	}
+	return time.Duration(us) * time.Microsecond
 }
 
 // BitRate returns the bit rate.
@@ -206,7 +229,7 @@ func (d *Decoder) OpenVideoDecoder() error {
 		return errors.New("ffgo: no video stream")
 	}
 
-	if d.codecCtx != nil {
+	if d.videoDecoderOpen {
 		return nil // Already opened
 	}
 
@@ -221,23 +244,70 @@ func (d *Decoder) OpenVideoDecoder() error {
 	}
 
 	// Allocate codec context
-	d.codecCtx = avcodec.AllocContext3(codec)
-	if d.codecCtx == nil {
+	d.videoCodecCtx = avcodec.AllocContext3(codec)
+	if d.videoCodecCtx == nil {
 		return errors.New("ffgo: failed to allocate codec context")
 	}
 
 	// Copy codec parameters
-	if err := avcodec.ParametersToContext(d.codecCtx, codecPar); err != nil {
-		avcodec.FreeContext(&d.codecCtx)
+	if err := avcodec.ParametersToContext(d.videoCodecCtx, codecPar); err != nil {
+		avcodec.FreeContext(&d.videoCodecCtx)
 		return err
 	}
 
 	// Open codec
-	if err := avcodec.Open2(d.codecCtx, codec, nil); err != nil {
-		avcodec.FreeContext(&d.codecCtx)
+	if err := avcodec.Open2(d.videoCodecCtx, codec, nil); err != nil {
+		avcodec.FreeContext(&d.videoCodecCtx)
 		return err
 	}
 
+	d.codecCtx = d.videoCodecCtx // For backward compatibility
+	d.videoDecoderOpen = true
+	return nil
+}
+
+// OpenAudioDecoder opens a codec context for audio decoding.
+func (d *Decoder) OpenAudioDecoder() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.audioStreamIdx < 0 {
+		return errors.New("ffgo: no audio stream")
+	}
+
+	if d.audioDecoderOpen {
+		return nil // Already opened
+	}
+
+	stream := avformat.GetStream(d.formatCtx, d.audioStreamIdx)
+	codecPar := avformat.GetStreamCodecPar(stream)
+	codecID := avformat.GetCodecParCodecID(codecPar)
+
+	// Find decoder
+	codec := avcodec.FindDecoder(codecID)
+	if codec == nil {
+		return errors.New("ffgo: audio decoder not found")
+	}
+
+	// Allocate codec context
+	d.audioCodecCtx = avcodec.AllocContext3(codec)
+	if d.audioCodecCtx == nil {
+		return errors.New("ffgo: failed to allocate audio codec context")
+	}
+
+	// Copy codec parameters
+	if err := avcodec.ParametersToContext(d.audioCodecCtx, codecPar); err != nil {
+		avcodec.FreeContext(&d.audioCodecCtx)
+		return err
+	}
+
+	// Open codec
+	if err := avcodec.Open2(d.audioCodecCtx, codec, nil); err != nil {
+		avcodec.FreeContext(&d.audioCodecCtx)
+		return err
+	}
+
+	d.audioDecoderOpen = true
 	return nil
 }
 
@@ -248,18 +318,47 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.codecCtx == nil {
+	if !d.videoDecoderOpen {
 		return nil, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
 	}
 
 	// Send packet to decoder
-	if err := avcodec.SendPacket(d.codecCtx, pkt); err != nil {
+	if err := avcodec.SendPacket(d.videoCodecCtx, pkt); err != nil {
 		return nil, err
 	}
 
 	// Receive decoded frame
 	avutil.FrameUnref(d.frame)
-	err := avcodec.ReceiveFrame(d.codecCtx, d.frame)
+	err := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
+	if err != nil {
+		if avutil.IsAgain(err) || avutil.IsEOF(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return d.frame, nil
+}
+
+// DecodeAudioPacket decodes an audio packet and returns the decoded frame.
+// Returns nil frame if more data is needed (EAGAIN) or on EOF.
+// The returned frame is owned by the decoder; copy it if you need to keep it.
+func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.audioDecoderOpen {
+		return nil, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
+	}
+
+	// Send packet to decoder
+	if err := avcodec.SendPacket(d.audioCodecCtx, pkt); err != nil {
+		return nil, err
+	}
+
+	// Receive decoded frame
+	avutil.FrameUnref(d.frame)
+	err := avcodec.ReceiveFrame(d.audioCodecCtx, d.frame)
 	if err != nil {
 		if avutil.IsAgain(err) || avutil.IsEOF(err) {
 			return nil, nil
@@ -274,7 +373,7 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 // This is a convenience method that handles packet reading internally.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeVideo() (Frame, error) {
-	if d.codecCtx == nil {
+	if !d.videoDecoderOpen {
 		if err := d.OpenVideoDecoder(); err != nil {
 			return nil, err
 		}
@@ -311,13 +410,127 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 	}
 }
 
-// FlushDecoder flushes the decoder buffers.
+// DecodeAudio reads and decodes the next audio frame.
+// This is a convenience method that handles packet reading internally.
+// Returns nil frame on EOF.
+func (d *Decoder) DecodeAudio() (Frame, error) {
+	if !d.audioDecoderOpen {
+		if err := d.OpenAudioDecoder(); err != nil {
+			return nil, err
+		}
+	}
+
+	for {
+		streamIdx, pkt, err := d.ReadPacket()
+		if err != nil {
+			if avutil.IsEOF(err) {
+				// Flush decoder
+				frame, err := d.DecodeAudioPacket(nil)
+				if err != nil || frame == nil {
+					return nil, err
+				}
+				return frame, nil
+			}
+			return nil, err
+		}
+
+		// Skip non-audio packets
+		if streamIdx != d.audioStreamIdx {
+			continue
+		}
+
+		// Decode the packet
+		frame, err := d.DecodeAudioPacket(pkt)
+		if err != nil {
+			return nil, err
+		}
+		if frame != nil {
+			return frame, nil
+		}
+		// Need more data, read next packet
+	}
+}
+
+// ReadFrame reads and decodes the next frame (video or audio).
+// Returns a FrameWrapper with the MediaType set.
+// The frame is owned by the decoder; call Copy() if you need to keep it.
+// Returns nil, nil on EOF.
+func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
+	// Open decoders if needed
+	if d.HasVideo() && !d.videoDecoderOpen {
+		if err := d.OpenVideoDecoder(); err != nil {
+			return nil, err
+		}
+	}
+	if d.HasAudio() && !d.audioDecoderOpen {
+		if err := d.OpenAudioDecoder(); err != nil {
+			return nil, err
+		}
+	}
+
+	for {
+		streamIdx, pkt, err := d.ReadPacket()
+		if err != nil {
+			if avutil.IsEOF(err) {
+				// Flush video decoder first
+				if d.videoDecoderOpen {
+					frame, err := d.DecodeVideoPacket(nil)
+					if err != nil {
+						return nil, err
+					}
+					if frame != nil {
+						return WrapFrame(frame, MediaTypeVideo), nil
+					}
+				}
+				// Flush audio decoder
+				if d.audioDecoderOpen {
+					frame, err := d.DecodeAudioPacket(nil)
+					if err != nil {
+						return nil, err
+					}
+					if frame != nil {
+						return WrapFrame(frame, MediaTypeAudio), nil
+					}
+				}
+				return nil, nil // EOF
+			}
+			return nil, err
+		}
+
+		// Decode video packet
+		if streamIdx == d.videoStreamIdx && d.videoDecoderOpen {
+			frame, err := d.DecodeVideoPacket(pkt)
+			if err != nil {
+				return nil, err
+			}
+			if frame != nil {
+				return WrapFrame(frame, MediaTypeVideo), nil
+			}
+		}
+
+		// Decode audio packet
+		if streamIdx == d.audioStreamIdx && d.audioDecoderOpen {
+			frame, err := d.DecodeAudioPacket(pkt)
+			if err != nil {
+				return nil, err
+			}
+			if frame != nil {
+				return WrapFrame(frame, MediaTypeAudio), nil
+			}
+		}
+	}
+}
+
+// FlushDecoder flushes all decoder buffers.
 func (d *Decoder) FlushDecoder() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.codecCtx != nil {
-		avcodec.FlushBuffers(d.codecCtx)
+	if d.videoCodecCtx != nil {
+		avcodec.FlushBuffers(d.videoCodecCtx)
+	}
+	if d.audioCodecCtx != nil {
+		avcodec.FlushBuffers(d.audioCodecCtx)
 	}
 }
 
@@ -337,11 +550,19 @@ func (d *Decoder) Seek(timestamp int64) error {
 	}
 
 	// Flush decoder buffers
-	if d.codecCtx != nil {
-		avcodec.FlushBuffers(d.codecCtx)
+	if d.videoCodecCtx != nil {
+		avcodec.FlushBuffers(d.videoCodecCtx)
+	}
+	if d.audioCodecCtx != nil {
+		avcodec.FlushBuffers(d.audioCodecCtx)
 	}
 
 	return nil
+}
+
+// SeekTime seeks to a position in the file using time.Duration.
+func (d *Decoder) SeekTime(dur time.Duration) error {
+	return d.Seek(dur.Microseconds())
 }
 
 // Close releases all resources.
@@ -364,10 +585,18 @@ func (d *Decoder) Close() error {
 		avcodec.PacketFree(&d.packet)
 	}
 
-	// Free codec context
-	if d.codecCtx != nil {
-		avcodec.FreeContext(&d.codecCtx)
+	// Free video codec context
+	if d.videoCodecCtx != nil {
+		avcodec.FreeContext(&d.videoCodecCtx)
 	}
+
+	// Free audio codec context
+	if d.audioCodecCtx != nil {
+		avcodec.FreeContext(&d.audioCodecCtx)
+	}
+
+	// Clear deprecated field
+	d.codecCtx = nil
 
 	// Close input
 	if d.formatCtx != nil {
