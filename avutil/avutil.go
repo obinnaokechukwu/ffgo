@@ -41,6 +41,11 @@ var (
 	avChannelLayoutDefault func(chLayout unsafe.Pointer, nbChannels int32)
 	avChannelLayoutCopy    func(dst, src unsafe.Pointer) int32
 
+	// AVOptions API (for setting codec options like preset, profile, etc.)
+	avOptSet       func(obj unsafe.Pointer, name, val string, searchFlags int32) int32
+	avOptSetInt    func(obj unsafe.Pointer, name string, val int64, searchFlags int32) int32
+	avOptSetDouble func(obj unsafe.Pointer, name string, val float64, searchFlags int32) int32
+
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
 	bindingsRegistered bool
@@ -85,6 +90,11 @@ func registerBindings() {
 	// Channel layout functions (FFmpeg 5.1+)
 	purego.RegisterLibFunc(&avChannelLayoutDefault, lib, "av_channel_layout_default")
 	purego.RegisterLibFunc(&avChannelLayoutCopy, lib, "av_channel_layout_copy")
+
+	// AVOptions API
+	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
+	purego.RegisterLibFunc(&avOptSetInt, lib, "av_opt_set_int")
+	purego.RegisterLibFunc(&avOptSetDouble, lib, "av_opt_set_double")
 
 	bindingsRegistered = true
 }
@@ -441,6 +451,59 @@ func ChannelLayoutCopy(dst, src unsafe.Pointer) error {
 	ret := avChannelLayoutCopy(dst, src)
 	if ret < 0 {
 		return NewError(ret, "av_channel_layout_copy")
+	}
+	return nil
+}
+
+// AV_OPT_SEARCH constants for av_opt_set functions
+const (
+	AV_OPT_SEARCH_CHILDREN = 1 << 0 // Search in child objects
+	AV_OPT_SEARCH_FAKE_OBJ = 1 << 1 // Search in options on fake objects
+)
+
+// OptSet sets a string option value on an AVOptions-enabled struct.
+// obj should be an AVCodecContext, AVFormatContext, or other AVOptions-enabled struct.
+// Use AV_OPT_SEARCH_CHILDREN to search in child objects (e.g., private codec data).
+func OptSet(obj unsafe.Pointer, name, val string, searchFlags int32) error {
+	if avOptSet == nil {
+		return bindings.ErrNotLoaded
+	}
+	if obj == nil {
+		return NewError(-22, "av_opt_set: nil object")
+	}
+	ret := avOptSet(obj, name, val, searchFlags)
+	if ret < 0 {
+		return NewError(ret, "av_opt_set")
+	}
+	return nil
+}
+
+// OptSetInt sets an integer option value on an AVOptions-enabled struct.
+func OptSetInt(obj unsafe.Pointer, name string, val int64, searchFlags int32) error {
+	if avOptSetInt == nil {
+		return bindings.ErrNotLoaded
+	}
+	if obj == nil {
+		return NewError(-22, "av_opt_set_int: nil object")
+	}
+	ret := avOptSetInt(obj, name, val, searchFlags)
+	if ret < 0 {
+		return NewError(ret, "av_opt_set_int")
+	}
+	return nil
+}
+
+// OptSetDouble sets a double option value on an AVOptions-enabled struct.
+func OptSetDouble(obj unsafe.Pointer, name string, val float64, searchFlags int32) error {
+	if avOptSetDouble == nil {
+		return bindings.ErrNotLoaded
+	}
+	if obj == nil {
+		return NewError(-22, "av_opt_set_double: nil object")
+	}
+	ret := avOptSetDouble(obj, name, val, searchFlags)
+	if ret < 0 {
+		return NewError(ret, "av_opt_set_double")
 	}
 	return nil
 }
