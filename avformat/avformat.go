@@ -69,6 +69,10 @@ var (
 	avPacketFree  func(pkt *unsafe.Pointer)
 	avPacketUnref func(pkt unsafe.Pointer)
 
+	// Dictionary functions (from avutil, used for metadata)
+	avDictGet func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) unsafe.Pointer
+	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
+
 	bindingsRegistered bool
 )
 
@@ -120,6 +124,13 @@ func registerBindings() {
 		purego.RegisterLibFunc(&avPacketAlloc, libCodec, "av_packet_alloc")
 		purego.RegisterLibFunc(&avPacketFree, libCodec, "av_packet_free")
 		purego.RegisterLibFunc(&avPacketUnref, libCodec, "av_packet_unref")
+	}
+
+	// Dictionary functions from avutil
+	libUtil := bindings.LibAVUtil()
+	if libUtil != 0 {
+		purego.RegisterLibFunc(&avDictGet, libUtil, "av_dict_get")
+		purego.RegisterLibFunc(&avDictSet, libUtil, "av_dict_set")
 	}
 
 	bindingsRegistered = true
@@ -364,11 +375,12 @@ func PacketUnref(pkt avcodec.Packet) {
 // AVFormatContext struct field offsets (for FFmpeg 6.x / avformat 60.x)
 // Verified with offsetof() on FFmpeg 60.16.100
 const (
-	offsetIOContext   = 32 // AVIOContext *pb
-	offsetNumStreams  = 44 // unsigned int nb_streams
-	offsetStreams     = 48 // AVStream **streams
-	offsetDuration    = 72 // int64_t duration
-	offsetBitRate     = 80 // int64_t bit_rate
+	offsetIOContext       = 32  // AVIOContext *pb
+	offsetNumStreams      = 44  // unsigned int nb_streams
+	offsetStreams         = 48  // AVStream **streams
+	offsetDuration        = 72  // int64_t duration
+	offsetBitRate         = 80  // int64_t bit_rate
+	offsetContextMetadata = 176 // AVDictionary *metadata
 )
 
 // GetNumStreams returns the number of streams in the context.
@@ -440,6 +452,7 @@ const (
 	offsetStreamID           = 12 // int id
 	offsetStreamCodecPar     = 16 // AVCodecParameters *codecpar
 	offsetStreamTimeBase     = 32 // AVRational time_base
+	offsetStreamMetadata     = 80 // AVDictionary *metadata
 	offsetStreamAvgFrameRate = 88 // AVRational avg_frame_rate
 )
 
@@ -677,4 +690,134 @@ func IOContextFree(ctx *IOContext) {
 	}
 	avioContextFree(ctx)
 	*ctx = nil
+}
+
+// Dictionary constants
+const (
+	AV_DICT_MATCH_CASE     = 1      // Only get an entry with exact-case key match
+	AV_DICT_IGNORE_SUFFIX  = 2      // Return first entry in a dictionary whose first part matches the search key
+	AV_DICT_DONT_STRDUP    = 4      // Take ownership of a key/value that has been allocated with av_malloc()
+	AV_DICT_DONT_STRDUP_KEY = 4     // Same as AV_DICT_DONT_STRDUP
+	AV_DICT_DONT_STRDUP_VAL = 8     // Take ownership of value
+	AV_DICT_DONT_OVERWRITE = 16     // Don't overwrite existing entries
+	AV_DICT_APPEND         = 32     // Append to existing entry value
+	AV_DICT_MULTIKEY       = 64     // Allow to store several equal keys in the dictionary
+)
+
+// AVDictionaryEntry struct field offsets
+const (
+	offsetDictEntryKey   = 0 // char *key
+	offsetDictEntryValue = 8 // char *value
+)
+
+// GetMetadata returns the metadata dictionary from a format context.
+func GetMetadata(ctx FormatContext) avutil.Dictionary {
+	if ctx == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetContextMetadata))
+}
+
+// GetStreamMetadata returns the metadata dictionary from a stream.
+func GetStreamMetadata(stream Stream) avutil.Dictionary {
+	if stream == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(stream) + offsetStreamMetadata))
+}
+
+// SetMetadata sets a metadata key-value pair on a format context.
+func SetMetadata(ctx FormatContext, key, value string) error {
+	if ctx == nil {
+		return bindings.ErrNotLoaded
+	}
+	if avDictSet == nil {
+		return bindings.ErrNotLoaded
+	}
+	metaPtr := unsafe.Pointer(uintptr(ctx) + offsetContextMetadata)
+	ret := avDictSet((*unsafe.Pointer)(metaPtr), key, value, 0)
+	runtime.KeepAlive(key)
+	runtime.KeepAlive(value)
+	if ret < 0 {
+		return avutil.NewError(ret, "av_dict_set")
+	}
+	return nil
+}
+
+// SetStreamMetadata sets a metadata key-value pair on a stream.
+func SetStreamMetadata(stream Stream, key, value string) error {
+	if stream == nil {
+		return bindings.ErrNotLoaded
+	}
+	if avDictSet == nil {
+		return bindings.ErrNotLoaded
+	}
+	metaPtr := unsafe.Pointer(uintptr(stream) + offsetStreamMetadata)
+	ret := avDictSet((*unsafe.Pointer)(metaPtr), key, value, 0)
+	runtime.KeepAlive(key)
+	runtime.KeepAlive(value)
+	if ret < 0 {
+		return avutil.NewError(ret, "av_dict_set")
+	}
+	return nil
+}
+
+// DictGet retrieves a dictionary entry.
+// Pass nil for prev to get the first entry, or the previous entry to iterate.
+// Use AV_DICT_IGNORE_SUFFIX with empty key to iterate all entries.
+func DictGet(dict avutil.Dictionary, key string, prev unsafe.Pointer, flags int32) unsafe.Pointer {
+	if dict == nil || avDictGet == nil {
+		return nil
+	}
+	result := avDictGet(dict, key, prev, flags)
+	runtime.KeepAlive(key)
+	return result
+}
+
+// DictEntryKey returns the key from a dictionary entry.
+func DictEntryKey(entry unsafe.Pointer) string {
+	if entry == nil {
+		return ""
+	}
+	keyPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(entry) + offsetDictEntryKey))
+	if keyPtr == nil {
+		return ""
+	}
+	return goString(keyPtr)
+}
+
+// DictEntryValue returns the value from a dictionary entry.
+func DictEntryValue(entry unsafe.Pointer) string {
+	if entry == nil {
+		return ""
+	}
+	valuePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(entry) + offsetDictEntryValue))
+	if valuePtr == nil {
+		return ""
+	}
+	return goString(valuePtr)
+}
+
+// goString converts a C string to a Go string.
+func goString(ptr unsafe.Pointer) string {
+	if ptr == nil {
+		return ""
+	}
+	// Find null terminator
+	var length int
+	for {
+		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
+		if b == 0 {
+			break
+		}
+		length++
+		// Safety limit
+		if length > 4096 {
+			break
+		}
+	}
+	if length == 0 {
+		return ""
+	}
+	return string((*[4096]byte)(ptr)[:length:length])
 }

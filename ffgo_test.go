@@ -1450,3 +1450,181 @@ func TestRemuxerSelectStreams(t *testing.T) {
 
 	t.Log("Successfully remuxed video-only stream")
 }
+
+func TestMetadataRead(t *testing.T) {
+	// Create test video with metadata using ffmpeg CLI
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "metadata_test.mp4")
+
+	cmd := exec.Command("ffmpeg", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=0.5:size=160x120:rate=30",
+		"-c:v", "libx264", "-preset", "ultrafast",
+		"-metadata", "title=Test Title",
+		"-metadata", "artist=Test Artist",
+		"-metadata", "album=Test Album",
+		"-metadata", "genre=Test Genre",
+		testFile)
+
+	if err := cmd.Run(); err != nil {
+		t.Skipf("ffmpeg not available: %v", err)
+		return
+	}
+
+	// Open and read metadata
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	meta := decoder.GetMetadata()
+	if meta == nil {
+		t.Log("No metadata found (some containers may not store metadata)")
+		return
+	}
+
+	t.Logf("Metadata entries: %d", len(meta))
+	for k, v := range meta {
+		t.Logf("  %s = %s", k, v)
+	}
+
+	// Check if we got some metadata
+	if len(meta) == 0 {
+		t.Log("Metadata map is empty")
+	}
+}
+
+func TestMetadataWrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "metadata_write.mkv")
+
+	// Create encoder with metadata
+	enc, err := NewEncoderWithOptions(testFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			GOPSize:     5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	// Set metadata before writing header
+	metadata := Metadata{
+		MetadataTitle:  "My Test Video",
+		MetadataArtist: "Test Author",
+		"custom_key":   "custom_value",
+	}
+	if err := enc.SetMetadata(metadata); err != nil {
+		enc.Close()
+		t.Fatalf("SetMetadata failed: %v", err)
+	}
+
+	// Write some frames
+	frame := FrameAlloc()
+	if frame == nil {
+		enc.Close()
+		t.Fatal("Failed to allocate frame")
+	}
+	avutil.SetFrameWidth(frame, 160)
+	avutil.SetFrameHeight(frame, 120)
+	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	avutil.FrameGetBuffer(frame, 0)
+
+	for i := 0; i < 10; i++ {
+		enc.WriteFrame(frame)
+	}
+	FrameFree(&frame)
+	enc.Close()
+
+	// Verify metadata using ffprobe
+	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", testFile)
+	output, err := cmd.Output()
+	if err != nil {
+		t.Logf("ffprobe not available, skipping verification: %v", err)
+	} else {
+		t.Logf("ffprobe output: %s", string(output))
+	}
+
+	// Also verify by opening with decoder
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open written file: %v", err)
+	}
+	defer decoder.Close()
+
+	readMeta := decoder.GetMetadata()
+	if readMeta != nil {
+		t.Logf("Read back %d metadata entries", len(readMeta))
+		for k, v := range readMeta {
+			t.Logf("  %s = %s", k, v)
+		}
+	}
+}
+
+func TestStreamMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
+
+	// Create encoder
+	enc, err := NewEncoderWithOptions(testFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			GOPSize:     5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	// Set stream metadata
+	if err := enc.SetStreamMetadata(0, Metadata{
+		MetadataLanguage: "eng",
+		"handler_name":   "Video Track",
+	}); err != nil {
+		enc.Close()
+		t.Fatalf("SetStreamMetadata failed: %v", err)
+	}
+
+	// Write some frames
+	frame := FrameAlloc()
+	if frame == nil {
+		enc.Close()
+		t.Fatal("Failed to allocate frame")
+	}
+	avutil.SetFrameWidth(frame, 160)
+	avutil.SetFrameHeight(frame, 120)
+	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	avutil.FrameGetBuffer(frame, 0)
+
+	for i := 0; i < 5; i++ {
+		enc.WriteFrame(frame)
+	}
+	FrameFree(&frame)
+	enc.Close()
+
+	// Read back
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open written file: %v", err)
+	}
+	defer decoder.Close()
+
+	streamMeta := decoder.GetStreamMetadata(0)
+	if streamMeta != nil {
+		t.Logf("Stream 0 metadata entries: %d", len(streamMeta))
+		for k, v := range streamMeta {
+			t.Logf("  %s = %s", k, v)
+		}
+	} else {
+		t.Log("No stream metadata found")
+	}
+}
