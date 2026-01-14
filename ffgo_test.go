@@ -2265,6 +2265,67 @@ func TestNewNetworkDecoder(t *testing.T) {
 	}
 }
 
+func TestGetAttachments(t *testing.T) {
+	// Create a test video with an attachment using ffmpeg
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "with_attachment.mkv")
+
+	// Create a small attachment file
+	attachmentFile := filepath.Join(tmpDir, "test.txt")
+	attachmentData := []byte("This is a test attachment file for ffgo testing.")
+	if err := os.WriteFile(attachmentFile, attachmentData, 0644); err != nil {
+		t.Fatalf("Failed to write attachment file: %v", err)
+	}
+
+	// Create video with attachment
+	cmd := exec.Command("ffmpeg", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=25",
+		"-attach", attachmentFile,
+		"-metadata:s:t:0", "mimetype=text/plain",
+		"-metadata:s:t:0", "filename=test.txt",
+		"-c:v", "libx264", "-preset", "ultrafast",
+		testFile)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create test video with attachment: %v\n%s", err, out)
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	// Check HasAttachments
+	if !decoder.HasAttachments() {
+		t.Error("Expected HasAttachments to be true")
+	}
+
+	attachments := decoder.GetAttachments()
+	t.Logf("Found %d attachments", len(attachments))
+
+	for i, att := range attachments {
+		t.Logf("  Attachment %d: filename=%q, mimetype=%q, size=%d bytes",
+			i, att.Filename, att.MimeType, len(att.Data))
+	}
+
+	if len(attachments) != 1 {
+		t.Errorf("Expected 1 attachment, got %d", len(attachments))
+	}
+
+	if len(attachments) >= 1 {
+		att := attachments[0]
+		if att.Filename != "test.txt" {
+			t.Errorf("Expected filename 'test.txt', got %q", att.Filename)
+		}
+		if att.MimeType != "text/plain" {
+			t.Errorf("Expected mimetype 'text/plain', got %q", att.MimeType)
+		}
+		if string(att.Data) != string(attachmentData) {
+			t.Errorf("Attachment data mismatch")
+		}
+	}
+}
+
 func TestGetChapters(t *testing.T) {
 	// Create a test video with chapters using ffmpeg
 	tmpDir := t.TempDir()
