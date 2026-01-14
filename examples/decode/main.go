@@ -45,7 +45,7 @@ func main() {
 
 	// Print file info
 	fmt.Printf("\nFile: %s\n", inputFile)
-	fmt.Printf("Duration: %d µs\n", decoder.Duration())
+	fmt.Printf("Duration: %v\n", decoder.Duration())
 	fmt.Printf("Bit rate: %d bps\n", decoder.BitRate())
 	fmt.Printf("Streams: %d\n", decoder.NumStreams())
 
