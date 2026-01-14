@@ -1,10 +1,12 @@
 # Claude Memory - ffgo Project
 
 ## Current Focus
-Core library implementation is complete. All features working:
-- Decoder: NewDecoder, ReadFrame(), DecodeVideo(), DecodeAudio(), Seek(), SeekTime()
-- Encoder: NewEncoder, WriteFrame(), Close()
-- Scaler: NewScaler, Scale(), Close()
+Library implementation complete with full user-guide.md API compliance:
+- Decoder: NewDecoder with functional options (WithStreams, WithHWDevice, WithFormat)
+- Decoder: Seek(time.Duration), SeekTimestamp(int64), ReadFrame(), StreamInfo with CodecName
+- Encoder: NewEncoder, NewEncoderWithOptions (VideoEncoderConfig, AudioEncoderConfig)
+- Encoder: WriteFrame(), WriteVideoFrame(), WriteAudioFrame()
+- Scaler: NewScaler (positional API), NewScalerWithConfig, Scale()
 - Custom I/O: NewDecoderFromReader, NewDecoderFromIO, NewEncoderToWriter, NewEncoderFromIO
 - Logging: SetLogLevel(), SetLogCallback()
 - All examples working: decode, encode, transcode, custom-io

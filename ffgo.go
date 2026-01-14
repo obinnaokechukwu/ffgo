@@ -84,6 +84,16 @@ const (
 	CodecIDAAC  = avcodec.CodecIDAAC
 	CodecIDMP3  = avcodec.CodecIDMP3
 	CodecIDOPUS = avcodec.CodecIDOPUS
+
+	// Codec aliases (shorter names for convenience, as shown in user-guide)
+	CodecH264 = CodecIDH264
+	CodecHEVC = CodecIDHEVC
+	CodecAV1  = CodecIDAV1
+	CodecVP8  = CodecIDVP8
+	CodecVP9  = CodecIDVP9
+	CodecAAC  = CodecIDAAC
+	CodecMP3  = CodecIDMP3
+	CodecOpus = CodecIDOPUS
 )
 
 // StreamInfo contains information about a media stream.

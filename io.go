@@ -382,6 +382,50 @@ func NewEncoderToWriter(w io.Writer, format string, config EncoderConfig) (*Enco
 	return NewEncoderFromIO(callbacks, format, config)
 }
 
+// NewEncoderToWriterWithOptions creates an encoder that writes to an io.Writer
+// using the EncoderOptions configuration.
+// If w implements io.Seeker, seeking will be supported.
+// format is the output format (e.g., "mp4", "mkv", "avi").
+func NewEncoderToWriterWithOptions(w io.Writer, format string, opts *EncoderOptions) (*Encoder, error) {
+	if opts == nil || opts.Video == nil {
+		return nil, errors.New("ffgo: EncoderOptions.Video is required")
+	}
+
+	video := opts.Video
+
+	// Convert VideoEncoderConfig to EncoderConfig
+	cfg := EncoderConfig{
+		Width:       video.Width,
+		Height:      video.Height,
+		PixelFormat: video.PixelFormat,
+		CodecID:     video.Codec,
+		BitRate:     video.Bitrate,
+		GOPSize:     video.GOPSize,
+		MaxBFrames:  video.MaxBFrames,
+	}
+
+	// Handle frame rate
+	if video.FrameRate.Den > 0 {
+		cfg.FrameRate = int(video.FrameRate.Num / video.FrameRate.Den)
+	}
+	if cfg.FrameRate <= 0 {
+		cfg.FrameRate = 30
+	}
+
+	// Apply defaults
+	if cfg.CodecID == CodecIDNone {
+		cfg.CodecID = CodecIDH264
+	}
+	if cfg.BitRate <= 0 {
+		cfg.BitRate = 2000000
+	}
+	if cfg.PixelFormat == PixelFormatNone {
+		cfg.PixelFormat = PixelFormatYUV420P
+	}
+
+	return NewEncoderToWriter(w, format, cfg)
+}
+
 // NewEncoderFromIO creates an encoder with custom I/O.
 // format is the output format (e.g., "mp4", "mkv", "avi").
 func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfig) (*Encoder, error) {
