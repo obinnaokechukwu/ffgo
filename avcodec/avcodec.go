@@ -375,13 +375,15 @@ func goString(ptr unsafe.Pointer) string {
 	return string(buf)
 }
 
-// Packet field offsets (for FFmpeg 6.x)
+// Packet field offsets (for FFmpeg 6.x/7.x)
 const (
-	offsetPacketPts      = 8  // int64 pts
-	offsetPacketDts      = 16 // int64 dts
-	offsetPacketData     = 24 // uint8_t *data
-	offsetPacketSize     = 32 // int size
+	offsetPacketPts         = 8  // int64 pts
+	offsetPacketDts         = 16 // int64 dts
+	offsetPacketData        = 24 // uint8_t *data
+	offsetPacketSize        = 32 // int size
 	offsetPacketStreamIndex = 36 // int stream_index
+	offsetPacketFlags       = 40 // int flags
+	offsetPacketPos         = 72 // int64 pos
 )
 
 // GetPacketPTS returns the presentation timestamp.
@@ -408,6 +410,14 @@ func GetPacketSize(pkt Packet) int32 {
 	return *(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketSize))
 }
 
+// GetPacketData returns a pointer to the packet data.
+func GetPacketData(pkt Packet) unsafe.Pointer {
+	if pkt == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(pkt) + offsetPacketData))
+}
+
 // GetPacketStreamIndex returns the stream index.
 func GetPacketStreamIndex(pkt Packet) int32 {
 	if pkt == nil {
@@ -423,6 +433,46 @@ func SetPacketStreamIndex(pkt Packet, idx int32) {
 	}
 	*(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketStreamIndex)) = idx
 }
+
+// GetPacketFlags returns the packet flags.
+// Use PacketFlagKey to check for keyframes.
+func GetPacketFlags(pkt Packet) int32 {
+	if pkt == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketFlags))
+}
+
+// SetPacketFlags sets the packet flags.
+func SetPacketFlags(pkt Packet, flags int32) {
+	if pkt == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketFlags)) = flags
+}
+
+// GetPacketPos returns the byte position in stream, or -1 if unknown.
+func GetPacketPos(pkt Packet) int64 {
+	if pkt == nil {
+		return -1
+	}
+	return *(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketPos))
+}
+
+// SetPacketPos sets the byte position in stream.
+func SetPacketPos(pkt Packet, pos int64) {
+	if pkt == nil {
+		return
+	}
+	*(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketPos)) = pos
+}
+
+// Packet flag constants
+const (
+	PacketFlagKey     = 0x0001 // AV_PKT_FLAG_KEY - The packet contains a keyframe
+	PacketFlagCorrupt = 0x0002 // AV_PKT_FLAG_CORRUPT - The packet content is corrupted
+	PacketFlagDiscard = 0x0004 // AV_PKT_FLAG_DISCARD - Flag is used to discard packets
+)
 
 // AVCodecContext struct field offsets (for FFmpeg 6.x / avcodec 60.x)
 // Verified with offsetof() - IMPORTANT: These offsets vary between FFmpeg versions!
