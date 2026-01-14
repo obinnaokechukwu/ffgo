@@ -1,7 +1,9 @@
 # Claude Memory - ffgo Project
 
 ## Current Focus
-**PROJECT COMPLETE** - All implementation and documentation finished:
+**PROJECT COMPLETE** - All implementation, documentation, and gap analysis finished:
+
+Latest addition (2026-01-14): Comprehensive gap analysis document added to docs/gap-analysis.md showing ~35-40% FFmpeg capability coverage, with 95% coverage for core video transcode pipelines. This helps users understand what ffgo can and cannot do compared to full FFmpeg.
 
 ### Implementation Status
 - ✅ All internal packages (bindings, handles, platform, shim)
