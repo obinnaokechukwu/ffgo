@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"sync"
+	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avformat"
@@ -99,6 +100,7 @@ type VideoEncoderConfig struct {
 	FrameRate Rational
 
 	// Bitrate is the target bit rate in bits/second (default: 2000000).
+	// Used for ABR/CBR rate control modes.
 	Bitrate int64
 
 	// PixelFormat is the pixel format (default: PixelFormatYUV420P).
@@ -109,6 +111,63 @@ type VideoEncoderConfig struct {
 
 	// MaxBFrames is the maximum number of B-frames (default: 0).
 	MaxBFrames int
+
+	// Preset controls speed/quality tradeoff (e.g., PresetMedium, PresetFast).
+	// Slower presets produce smaller files. Empty string uses codec default.
+	Preset EncoderPreset
+
+	// Tune optimizes for specific content types (e.g., TuneFilm, TuneAnimation).
+	// Empty string uses codec default.
+	Tune EncoderTune
+
+	// Profile specifies H.264/H.265 profile (e.g., ProfileHigh, ProfileMain).
+	// Higher profiles support more features. Empty string uses codec default.
+	Profile VideoProfile
+
+	// Level specifies H.264/H.265 level (e.g., Level4_1 for 1080p60).
+	// Higher levels support higher resolutions. Empty string uses auto.
+	Level VideoLevel
+
+	// RateControl specifies the rate control mode (default: RateControlABR).
+	RateControl RateControlMode
+
+	// CRF is the Constant Rate Factor (0-51 for x264, 0-63 for x265).
+	// Used when RateControl is RateControlCRF.
+	// Lower values = higher quality, larger files. Typical: 18-28.
+	CRF int
+
+	// CQP is the Constant Quantization Parameter.
+	// Used when RateControl is RateControlCQP.
+	CQP int
+
+	// MinBitrate is the minimum bitrate for VBV (bits/second).
+	// Used for rate-constrained encoding.
+	MinBitrate int64
+
+	// MaxBitrate is the maximum bitrate for VBV (bits/second).
+	// Used for rate-constrained encoding.
+	MaxBitrate int64
+
+	// BufferSize is the VBV buffer size (bits).
+	// Controls rate variation. Larger = more variation allowed.
+	BufferSize int64
+
+	// BFrameStrategy controls B-frame placement (0-2).
+	// 0=off, 1=fast, 2=best (slower).
+	BFrameStrategy int
+
+	// RefFrames is the number of reference frames (1-16).
+	// More reference frames = better compression, slower encoding.
+	RefFrames int
+
+	// Threads is the number of encoding threads (default: auto).
+	// 0 = auto-detect based on CPU cores.
+	Threads int
+
+	// CodecOptions allows setting arbitrary codec-specific options.
+	// Keys and values are passed directly to av_opt_set.
+	// Example: {"x264-params": "rc-lookahead=40"}
+	CodecOptions map[string]string
 }
 
 // AudioEncoderConfig configures audio encoding parameters.
@@ -261,6 +320,7 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 
 // NewEncoderWithOptions creates a new encoder with separate video and audio configuration.
 // This is the recommended way to create encoders in new code.
+// It supports advanced codec options like presets, profiles, CRF, etc.
 func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) {
 	if opts == nil || opts.Video == nil {
 		return nil, errors.New("ffgo: EncoderOptions.Video is required")
@@ -268,48 +328,240 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 
 	video := opts.Video
 
-	// Convert VideoEncoderConfig to EncoderConfig
-	cfg := EncoderConfig{
-		Width:       video.Width,
-		Height:      video.Height,
-		PixelFormat: video.PixelFormat,
-		CodecID:     video.Codec,
-		BitRate:     video.Bitrate,
-		GOPSize:     video.GOPSize,
-		MaxBFrames:  video.MaxBFrames,
-	}
-
-	// Handle frame rate
-	if video.FrameRate.Den > 0 {
-		cfg.FrameRate = int(video.FrameRate.Num / video.FrameRate.Den)
-	}
-	if cfg.FrameRate <= 0 {
-		cfg.FrameRate = 30
-	}
-
-	// Apply defaults from VideoEncoderConfig if not set in EncoderConfig
-	if cfg.CodecID == CodecIDNone {
-		cfg.CodecID = CodecIDH264
-	}
-	if cfg.BitRate <= 0 {
-		cfg.BitRate = 2000000
-	}
-
-	// Create video encoder
-	enc, err := NewEncoder(path, cfg)
-	if err != nil {
+	// Ensure FFmpeg is loaded
+	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
 
+	// Apply defaults
+	if video.Width <= 0 || video.Height <= 0 {
+		return nil, errors.New("ffgo: width and height must be positive")
+	}
+	pixFmt := video.PixelFormat
+	if pixFmt == PixelFormatNone {
+		pixFmt = PixelFormatYUV420P
+	}
+	codecID := video.Codec
+	if codecID == CodecIDNone {
+		codecID = CodecIDH264
+	}
+	bitrate := video.Bitrate
+	if bitrate <= 0 && video.RateControl != RateControlCRF && video.RateControl != RateControlCQP {
+		bitrate = 2000000
+	}
+	gopSize := video.GOPSize
+	if gopSize <= 0 {
+		gopSize = 12
+	}
+
+	// Handle frame rate
+	frameRateNum := video.FrameRate.Num
+	frameRateDen := video.FrameRate.Den
+	if frameRateDen <= 0 {
+		frameRateNum = 30
+		frameRateDen = 1
+	}
+
+	e := &Encoder{
+		width:       video.Width,
+		height:      video.Height,
+		pixFmt:      pixFmt,
+		timeBaseNum: 1,
+		timeBaseDen: int32(frameRateNum / frameRateDen),
+		hasVideo:    true,
+	}
+
+	// Determine format from filename extension
+	formatName := guessFormatFromPath(path)
+	if formatName == "" {
+		return nil, errors.New("ffgo: cannot determine output format from filename")
+	}
+
+	// Create output format context
+	if err := avformat.AllocOutputContext2(&e.formatCtx, nil, formatName, path); err != nil {
+		return nil, err
+	}
+
+	// Find encoder
+	codec := avcodec.FindEncoder(codecID)
+	if codec == nil {
+		e.cleanup()
+		return nil, errors.New("ffgo: encoder not found")
+	}
+
+	// Create video stream
+	e.videoStream = avformat.NewStream(e.formatCtx, codec)
+	if e.videoStream == nil {
+		e.cleanup()
+		return nil, errors.New("ffgo: failed to create stream")
+	}
+	e.stream = e.videoStream // Backward compatibility
+
+	// Create video codec context
+	e.videoCodecCtx = avcodec.AllocContext3(codec)
+	if e.videoCodecCtx == nil {
+		e.cleanup()
+		return nil, errors.New("ffgo: failed to allocate codec context")
+	}
+	e.codecCtx = e.videoCodecCtx // Backward compatibility
+
+	// Configure basic codec context parameters
+	avcodec.SetCtxWidth(e.codecCtx, int32(video.Width))
+	avcodec.SetCtxHeight(e.codecCtx, int32(video.Height))
+	avcodec.SetCtxPixFmt(e.codecCtx, int32(pixFmt))
+	avcodec.SetCtxTimeBase(e.codecCtx, 1, int32(frameRateNum/frameRateDen))
+	avcodec.SetCtxFramerate(e.codecCtx, int32(frameRateNum), int32(frameRateDen))
+	avcodec.SetCtxGopSize(e.codecCtx, int32(gopSize))
+	avcodec.SetCtxMaxBFrames(e.codecCtx, int32(video.MaxBFrames))
+
+	// Set bitrate for ABR/CBR modes
+	if bitrate > 0 {
+		avcodec.SetCtxBitRate(e.codecCtx, bitrate)
+	}
+
+	// Apply advanced codec options via av_opt_set (before opening codec)
+	if err := applyVideoOptions(unsafe.Pointer(e.codecCtx), video); err != nil {
+		e.cleanup()
+		return nil, err
+	}
+
+	// Set global header flag if needed by container format
+	if avformat.NeedsGlobalHeader(e.formatCtx) {
+		flags := avcodec.GetCtxFlags(e.codecCtx)
+		avcodec.SetCtxFlags(e.codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	}
+
+	// Open codec
+	if err := avcodec.Open2(e.codecCtx, codec, nil); err != nil {
+		e.cleanup()
+		return nil, err
+	}
+
+	// Copy codec parameters to stream
+	codecPar := avformat.GetStreamCodecPar(e.stream)
+	if err := avcodec.ParametersFromContext(codecPar, e.codecCtx); err != nil {
+		e.cleanup()
+		return nil, err
+	}
+
+	// Set stream time base
+	avformat.SetStreamTimeBase(e.stream, 1, int32(frameRateNum/frameRateDen))
+
+	// Open output file if needed
+	if !avformat.HasNoFile(e.formatCtx) {
+		if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
+			e.cleanup()
+			return nil, err
+		}
+		avformat.SetIOContext(e.formatCtx, e.ioCtx)
+	}
+
+	// Allocate video packet
+	e.videoPacket = avcodec.PacketAlloc()
+	if e.videoPacket == nil {
+		e.cleanup()
+		return nil, errors.New("ffgo: failed to allocate packet")
+	}
+	e.packet = e.videoPacket // Backward compatibility
+
 	// Setup audio if configured
 	if opts.Audio != nil {
-		if err := enc.setupAudio(opts.Audio); err != nil {
-			enc.Close()
+		if err := e.setupAudio(opts.Audio); err != nil {
+			e.Close()
 			return nil, err
 		}
 	}
 
-	return enc, nil
+	return e, nil
+}
+
+// applyVideoOptions applies advanced video encoding options via av_opt_set.
+// This must be called BEFORE avcodec_open2.
+func applyVideoOptions(ctx unsafe.Pointer, cfg *VideoEncoderConfig) error {
+	if ctx == nil {
+		return nil
+	}
+
+	// Preset (speed/quality tradeoff)
+	if cfg.Preset != "" {
+		if err := avutil.OptSet(ctx, "preset", string(cfg.Preset), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			// Some codecs don't support preset, ignore error
+			_ = err
+		}
+	}
+
+	// Tune (content-specific optimization)
+	if cfg.Tune != "" {
+		if err := avutil.OptSet(ctx, "tune", string(cfg.Tune), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Profile
+	if cfg.Profile != "" {
+		if err := avutil.OptSet(ctx, "profile", string(cfg.Profile), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Level
+	if cfg.Level != "" {
+		if err := avutil.OptSet(ctx, "level", string(cfg.Level), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Rate control
+	switch cfg.RateControl {
+	case RateControlCRF:
+		if cfg.CRF > 0 {
+			if err := avutil.OptSetInt(ctx, "crf", int64(cfg.CRF), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+				_ = err
+			}
+		}
+	case RateControlCQP:
+		if cfg.CQP > 0 {
+			if err := avutil.OptSetInt(ctx, "qp", int64(cfg.CQP), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+				_ = err
+			}
+		}
+	}
+
+	// VBV buffer settings (for CBR/constrained VBR)
+	if cfg.MaxBitrate > 0 {
+		if err := avutil.OptSetInt(ctx, "maxrate", cfg.MaxBitrate, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+	if cfg.BufferSize > 0 {
+		if err := avutil.OptSetInt(ctx, "bufsize", cfg.BufferSize, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Reference frames
+	if cfg.RefFrames > 0 {
+		if err := avutil.OptSetInt(ctx, "refs", int64(cfg.RefFrames), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Threading
+	if cfg.Threads > 0 {
+		if err := avutil.OptSetInt(ctx, "threads", int64(cfg.Threads), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+
+	// Custom codec options
+	for key, value := range cfg.CodecOptions {
+		if err := avutil.OptSet(ctx, key, value, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			// Don't fail on unknown options, just skip
+			_ = err
+		}
+	}
+
+	return nil
 }
 
 // setupAudio adds an audio stream to the encoder.

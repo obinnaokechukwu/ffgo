@@ -1137,3 +1137,162 @@ func TestAudioFilterGraphVolume(t *testing.T) {
 
 	t.Log("Audio filter graph with volume filter succeeded")
 }
+
+// Tests for advanced codec options
+
+func TestEncoderWithPreset(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "preset_test.mp4")
+
+	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       320,
+			Height:      240,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			Preset:      PresetUltrafast, // Should produce fast encoding
+			GOPSize:     10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions with preset failed: %v", err)
+	}
+	defer enc.Close()
+
+	t.Logf("Encoder with preset=%s created successfully", PresetUltrafast)
+}
+
+func TestEncoderWithCRF(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "crf_test.mp4")
+
+	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       320,
+			Height:      240,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			PixelFormat: PixelFormatYUV420P,
+			RateControl: RateControlCRF,
+			CRF:         23, // Typical quality setting
+			Preset:      PresetMedium,
+			GOPSize:     10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions with CRF failed: %v", err)
+	}
+	defer enc.Close()
+
+	t.Logf("Encoder with CRF=%d created successfully", 23)
+}
+
+func TestEncoderWithProfile(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "profile_test.mp4")
+
+	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       320,
+			Height:      240,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			Profile:     ProfileBaseline, // Most compatible
+			Level:       Level3,
+			Preset:      PresetFast,
+			GOPSize:     10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions with profile failed: %v", err)
+	}
+	defer enc.Close()
+
+	t.Logf("Encoder with profile=%s level=%s created successfully", ProfileBaseline, Level3)
+}
+
+func TestEncoderWithCodecOptions(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "options_test.mp4")
+
+	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       320,
+			Height:      240,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			Preset:      PresetFast,
+			GOPSize:     10,
+			CodecOptions: map[string]string{
+				"bf": "0", // No B-frames
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions with codec options failed: %v", err)
+	}
+	defer enc.Close()
+
+	t.Log("Encoder with custom codec options created successfully")
+}
+
+func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "advanced_encode.mp4")
+
+	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			PixelFormat: PixelFormatYUV420P,
+			RateControl: RateControlCRF,
+			CRF:         28,
+			Preset:      PresetUltrafast,
+			Profile:     ProfileHigh,
+			GOPSize:     5,
+			MaxBFrames:  0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+	}
+	defer enc.Close()
+
+	// Create test frame
+	frame := FrameAlloc()
+	if frame == nil {
+		t.Fatal("FrameAlloc returned nil")
+	}
+	defer FrameFree(&frame)
+
+	avutil.SetFrameWidth(frame, 160)
+	avutil.SetFrameHeight(frame, 120)
+	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+
+	// Allocate frame buffer
+	if ret := avutil.FrameGetBuffer(frame, 0); ret < 0 {
+		t.Fatalf("FrameGetBuffer failed: %d", ret)
+	}
+
+	// Write some frames
+	for i := 0; i < 10; i++ {
+		avutil.SetFramePTS(frame, int64(i))
+		if err := enc.WriteFrame(frame); err != nil {
+			t.Fatalf("WriteFrame failed: %v", err)
+		}
+	}
+
+	// Verify output file exists and has content
+	stat, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("Output file not created: %v", err)
+	}
+	if stat.Size() == 0 {
+		t.Error("Output file is empty")
+	}
+
+	t.Logf("Encoded 10 frames with advanced options to %s (%d bytes)", outPath, stat.Size())
+}
