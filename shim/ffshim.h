@@ -57,6 +57,13 @@ int ffshim_strerror(int errnum, char *errbuf, size_t errbuf_size);
 void ffshim_avio_write_string(void *avio_ctx, const char *str);
 
 /* ============================================================================
+ * CHAPTER HELPERS
+ * ============================================================================ */
+
+/* Create a new chapter in the format context */
+void* ffshim_new_chapter(void *ctx, long long id, int tb_num, int tb_den, long long start, long long end, void *metadata);
+
+/* ============================================================================
  * VERSION INFO
  * ============================================================================ */
 

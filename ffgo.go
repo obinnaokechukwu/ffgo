@@ -132,6 +132,16 @@ type StreamInfo struct {
 	TimeBase   Rational
 	Duration   int64 // In time_base units
 	BitRate    int64
+
+	// codecPar stores the codec parameters for stream copy operations.
+	codecPar avcodec.Parameters
+}
+
+// CodecParameters returns the codec parameters for this stream.
+// Used for stream copy operations where the codec parameters need to
+// be copied from source to destination without re-encoding.
+func (s *StreamInfo) CodecParameters() avcodec.Parameters {
+	return s.codecPar
 }
 
 // FrameInfo contains information about a decoded frame.

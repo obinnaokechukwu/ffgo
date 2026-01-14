@@ -196,6 +196,7 @@ func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
 		CodecID:   codecID,
 		CodecName: codecName,
 		TimeBase:  avutil.NewRational(tbNum, tbDen),
+		codecPar:  codecPar,
 	}
 
 	if codecType == avutil.MediaTypeVideo {

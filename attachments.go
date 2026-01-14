@@ -3,6 +3,9 @@
 package ffgo
 
 import (
+	"errors"
+
+	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avformat"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 )
@@ -113,4 +116,103 @@ func (d *Decoder) HasAttachments() bool {
 	}
 
 	return false
+}
+
+// AddAttachment adds an attachment to the output file.
+// Attachments are commonly used in MKV files for fonts, cover art, etc.
+// Must be called before WriteHeader.
+func (e *Encoder) AddAttachment(att Attachment) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+	if e.headerWritten {
+		return errors.New("ffgo: AddAttachment must be called before WriteHeader")
+	}
+	if e.formatCtx == nil {
+		return errors.New("ffgo: encoder not initialized")
+	}
+	if len(att.Data) == 0 {
+		return errors.New("ffgo: attachment data is empty")
+	}
+
+	// Create a new stream for the attachment
+	stream := avformat.NewStream(e.formatCtx, nil)
+	if stream == nil {
+		return errors.New("ffgo: failed to create attachment stream")
+	}
+
+	// Get codec parameters for the stream
+	codecPar := avformat.GetStreamCodecPar(stream)
+	if codecPar == nil {
+		return errors.New("ffgo: failed to get codec parameters")
+	}
+
+	// Set media type to attachment
+	avformat.SetCodecParType(codecPar, avutil.MediaTypeAttachment)
+
+	// Determine codec ID based on MIME type or filename
+	codecID := guessAttachmentCodecID(att.MimeType, att.Filename)
+	avformat.SetCodecParCodecID(codecPar, codecID)
+
+	// Set extradata to the attachment content
+	avformat.SetCodecParExtradata(codecPar, att.Data)
+
+	// Set metadata on the stream
+	if att.Filename != "" {
+		avformat.SetStreamMetadata(stream, "filename", att.Filename)
+	}
+	if att.MimeType != "" {
+		avformat.SetStreamMetadata(stream, "mimetype", att.MimeType)
+	}
+	if att.Description != "" {
+		avformat.SetStreamMetadata(stream, "title", att.Description)
+	}
+
+	return nil
+}
+
+// guessAttachmentCodecID guesses the codec ID based on MIME type or filename.
+func guessAttachmentCodecID(mimeType, filename string) avcodec.CodecID {
+	// Check MIME type first
+	switch mimeType {
+	case "application/x-truetype-font", "font/ttf", "font/otf",
+		"application/x-font-ttf", "application/x-font-opentype":
+		return avcodec.CodecIDTTF
+	case "image/png":
+		return avcodec.CodecIDPNG
+	case "image/jpeg":
+		return avcodec.CodecIDMJPEG
+	case "image/gif":
+		return avcodec.CodecIDGIF
+	case "image/webp":
+		return avcodec.CodecIDWEBP
+	}
+
+	// Check filename extension
+	ext := ""
+	for i := len(filename) - 1; i >= 0; i-- {
+		if filename[i] == '.' {
+			ext = filename[i+1:]
+			break
+		}
+	}
+
+	switch ext {
+	case "ttf", "TTF", "otf", "OTF":
+		return avcodec.CodecIDTTF
+	case "png", "PNG":
+		return avcodec.CodecIDPNG
+	case "jpg", "jpeg", "JPG", "JPEG":
+		return avcodec.CodecIDMJPEG
+	case "gif", "GIF":
+		return avcodec.CodecIDGIF
+	case "webp", "WEBP":
+		return avcodec.CodecIDWEBP
+	}
+
+	// Default to binary data
+	return avcodec.CodecIDBinData
 }

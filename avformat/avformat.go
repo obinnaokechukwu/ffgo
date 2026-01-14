@@ -74,6 +74,9 @@ var (
 	avDictGet func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) unsafe.Pointer
 	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
 
+	// Chapter function
+	avformatNewChapter func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) unsafe.Pointer
+
 	bindingsRegistered bool
 )
 
@@ -595,6 +598,57 @@ func GetCodecParExtradataSize(par avcodec.Parameters) int {
 		return 0
 	}
 	return int(*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradataSize)))
+}
+
+// SetCodecParType sets the media type in codec parameters.
+func SetCodecParType(par avcodec.Parameters, mediaType avutil.MediaType) {
+	if par == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParType)) = int32(mediaType)
+}
+
+// SetCodecParCodecID sets the codec ID in codec parameters.
+func SetCodecParCodecID(par avcodec.Parameters, codecID avcodec.CodecID) {
+	if par == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParCodecID)) = int32(codecID)
+}
+
+// SetCodecParExtradata sets the extradata in codec parameters.
+// The data is copied into memory allocated by FFmpeg's allocator.
+// Any existing extradata is freed first.
+func SetCodecParExtradata(par avcodec.Parameters, data []byte) {
+	if par == nil {
+		return
+	}
+
+	// Get existing extradata pointer to free it
+	existingPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradata))
+	if existingPtr != nil {
+		avutil.Free(existingPtr)
+	}
+
+	if len(data) == 0 {
+		*(*unsafe.Pointer)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradata)) = nil
+		*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradataSize)) = 0
+		return
+	}
+
+	// Allocate memory using FFmpeg's allocator
+	newPtr := avutil.Malloc(uintptr(len(data)))
+	if newPtr == nil {
+		return
+	}
+
+	// Copy data
+	dst := unsafe.Slice((*byte)(newPtr), len(data))
+	copy(dst, data)
+
+	// Set pointer and size
+	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradata)) = newPtr
+	*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradataSize)) = int32(len(data))
 }
 
 // GetStreamAvgFrameRate returns the average frame rate (num/den).

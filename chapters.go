@@ -3,10 +3,13 @@
 package ffgo
 
 import (
+	"errors"
 	"time"
 	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avformat"
+	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // Chapter represents a chapter marker in a media file.
@@ -98,4 +101,68 @@ func getChapterMetadata(ch avformat.Chapter) Metadata {
 	}
 
 	return meta
+}
+
+// SetChapters sets chapters for the output file.
+// Must be called before WriteHeader.
+func (e *Encoder) SetChapters(chapters []Chapter) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+	if e.headerWritten {
+		return errors.New("ffgo: SetChapters must be called before WriteHeader")
+	}
+	if e.formatCtx == nil {
+		return errors.New("ffgo: encoder not initialized")
+	}
+
+	// Check if shim is loaded (required for chapter writing)
+	if !shim.IsLoaded() {
+		return errors.New("ffgo: shim not loaded, chapter writing not available")
+	}
+
+	// Use millisecond time base for chapters (1/1000)
+	const tbNum int32 = 1
+	const tbDen int32 = 1000
+
+	for i, ch := range chapters {
+		// Convert time.Duration to PTS in milliseconds
+		startPTS := int64(ch.Start / time.Millisecond)
+		endPTS := int64(ch.End / time.Millisecond)
+
+		// Use provided ID or generate one
+		id := ch.ID
+		if id == 0 {
+			id = int64(i)
+		}
+
+		// Create metadata dictionary for title
+		var metadata avutil.Dictionary
+		if ch.Title != "" {
+			avutil.DictSet(&metadata, "title", ch.Title, 0)
+			// Add any additional metadata
+			for k, v := range ch.Metadata {
+				if k != "title" { // Don't duplicate title
+					avutil.DictSet(&metadata, k, v, 0)
+				}
+			}
+		}
+
+		// Create chapter using shim
+		_, err := shim.NewChapter(
+			unsafe.Pointer(e.formatCtx),
+			id,
+			tbNum, tbDen,
+			startPTS, endPTS,
+			metadata,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
