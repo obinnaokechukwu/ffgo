@@ -2515,6 +2515,144 @@ func padNumber(n, width int) string {
 	return fmt.Sprintf(format, n)
 }
 
+func TestMuxer(t *testing.T) {
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "muxer_output.mp4")
+
+	// Create muxer
+	muxer, err := NewMuxer(outputPath, "mp4")
+	if err != nil {
+		t.Fatalf("NewMuxer failed: %v", err)
+	}
+	defer muxer.Close()
+
+	// Add video stream
+	videoStream, err := muxer.AddVideoStream(&VideoStreamConfig{
+		Codec:       CodecIDH264,
+		Width:       160,
+		Height:      120,
+		PixelFormat: PixelFormatYUV420P,
+		FrameRate:   25,
+		BitRate:     500000,
+	})
+	if err != nil {
+		t.Fatalf("AddVideoStream failed: %v", err)
+	}
+
+	if videoStream.MediaType() != MediaTypeVideo {
+		t.Errorf("Expected video stream, got %v", videoStream.MediaType())
+	}
+
+	// Write header
+	if err := muxer.WriteHeader(); err != nil {
+		t.Fatalf("WriteHeader failed: %v", err)
+	}
+
+	// Create and write test frames
+	for i := 0; i < 10; i++ {
+		frame := FrameAlloc()
+		if frame == nil {
+			t.Fatal("Failed to allocate frame")
+		}
+
+		avutil.SetFrameWidth(frame, 160)
+		avutil.SetFrameHeight(frame, 120)
+		avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+
+		if err := avutil.FrameGetBufferErr(frame, 32); err != nil {
+			FrameFree(&frame)
+			t.Fatalf("Failed to allocate frame buffer: %v", err)
+		}
+
+		// Fill frame with test pattern
+		fillTestFrameYUV420(frame, uint8(i*25))
+		avutil.SetFramePTS(frame, int64(i))
+
+		if err := muxer.WriteFrame(videoStream, frame); err != nil {
+			FrameFree(&frame)
+			t.Fatalf("WriteFrame failed: %v", err)
+		}
+		FrameFree(&frame)
+	}
+
+	// Write trailer
+	if err := muxer.WriteTrailer(); err != nil {
+		t.Fatalf("WriteTrailer failed: %v", err)
+	}
+
+	// Close muxer
+	muxer.Close()
+
+	// Verify output file exists and has reasonable size
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatalf("Output file not found: %v", err)
+	}
+	if info.Size() < 1000 {
+		t.Errorf("Output file too small: %d bytes", info.Size())
+	}
+	t.Logf("Created output file: %s (%d bytes)", outputPath, info.Size())
+
+	// Verify output file can be opened
+	decoder, err := NewDecoder(outputPath)
+	if err != nil {
+		t.Fatalf("Failed to open output: %v", err)
+	}
+	defer decoder.Close()
+
+	if !decoder.HasVideo() {
+		t.Error("Output has no video stream")
+	}
+	videoInfo := decoder.VideoStream()
+	if videoInfo.Width != 160 || videoInfo.Height != 120 {
+		t.Errorf("Unexpected output dimensions: %dx%d", videoInfo.Width, videoInfo.Height)
+	}
+	t.Logf("Output video: %dx%d", videoInfo.Width, videoInfo.Height)
+}
+
+func fillTestFrameYUV420(frame Frame, value uint8) {
+	width := int(avutil.GetFrameWidth(frame))
+	height := int(avutil.GetFrameHeight(frame))
+
+	// Y plane
+	yPtr := avutil.GetFrameDataPlane(frame, 0)
+	yLinesize := avutil.GetFrameLinesizePlane(frame, 0)
+	if yPtr != nil && yLinesize > 0 {
+		yData := unsafe.Slice((*byte)(yPtr), int(yLinesize)*height)
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				yData[y*int(yLinesize)+x] = value
+			}
+		}
+	}
+
+	// U and V planes (half resolution)
+	uvHeight := height / 2
+	uvWidth := width / 2
+
+	uPtr := avutil.GetFrameDataPlane(frame, 1)
+	uLinesize := avutil.GetFrameLinesizePlane(frame, 1)
+	if uPtr != nil && uLinesize > 0 {
+		uData := unsafe.Slice((*byte)(uPtr), int(uLinesize)*uvHeight)
+		for y := 0; y < uvHeight; y++ {
+			for x := 0; x < uvWidth; x++ {
+				uData[y*int(uLinesize)+x] = 128
+			}
+		}
+	}
+
+	vPtr := avutil.GetFrameDataPlane(frame, 2)
+	vLinesize := avutil.GetFrameLinesizePlane(frame, 2)
+	if vPtr != nil && vLinesize > 0 {
+		vData := unsafe.Slice((*byte)(vPtr), int(vLinesize)*uvHeight)
+		for y := 0; y < uvHeight; y++ {
+			for x := 0; x < uvWidth; x++ {
+				vData[y*int(vLinesize)+x] = 128
+			}
+		}
+	}
+}
+
 func fillTestFrameRGB(frame Frame, r, g, b uint8) {
 	width := int(avutil.GetFrameWidth(frame))
 	height := int(avutil.GetFrameHeight(frame))
