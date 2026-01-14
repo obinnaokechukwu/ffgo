@@ -56,7 +56,8 @@ var (
 	avInterleavedWriteFrame  func(ctx, pkt unsafe.Pointer) int32
 	avSeekFrame              func(ctx unsafe.Pointer, streamIndex int32, timestamp int64, flags int32) int32
 
-	avFindBestStream func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
+	avFindBestStream    func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
+	avFindInputFormat   func(name string) unsafe.Pointer
 
 	avioOpen         func(ctx *unsafe.Pointer, url string, flags int32) int32
 	avioClose        func(ctx unsafe.Pointer) int32
@@ -112,6 +113,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avSeekFrame, lib, "av_seek_frame")
 
 	purego.RegisterLibFunc(&avFindBestStream, lib, "av_find_best_stream")
+	purego.RegisterLibFunc(&avFindInputFormat, lib, "av_find_input_format")
 
 	purego.RegisterLibFunc(&avioOpen, lib, "avio_open")
 	purego.RegisterLibFunc(&avioClose, lib, "avio_close")
@@ -150,6 +152,15 @@ func FreeContext(ctx FormatContext) {
 		return
 	}
 	avformatFreeContext(ctx)
+}
+
+// FindInputFormat finds an input format by short name.
+// Returns nil if the format is not found.
+func FindInputFormat(name string) InputFormat {
+	if avFindInputFormat == nil {
+		return nil
+	}
+	return avFindInputFormat(name)
 }
 
 // OpenInput opens an input file.
