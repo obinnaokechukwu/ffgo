@@ -1939,6 +1939,73 @@ func TestSubtitleDecoder(t *testing.T) {
 	t.Logf("Decoded %d subtitles", subCount)
 }
 
+func TestBitstreamFilterExists(t *testing.T) {
+	filters := ListBitstreamFilters()
+	t.Logf("Checking %d known bitstream filters", len(filters))
+
+	for _, name := range filters {
+		exists := BitstreamFilterExists(name)
+		t.Logf("  %s: %v", name, exists)
+	}
+
+	// At least null filter should exist
+	if !BitstreamFilterExists(BSFNameNull) {
+		t.Error("Expected null BSF to exist")
+	}
+}
+
+func TestBitstreamFilterNull(t *testing.T) {
+	// Create null filter (passthrough)
+	bsf, err := NewBitstreamFilter(BSFNameNull)
+	if err != nil {
+		t.Fatalf("Failed to create null BSF: %v", err)
+	}
+	defer bsf.Close()
+
+	// Initialize (null filter doesn't need codec params)
+	if err := bsf.Init(); err != nil {
+		t.Fatalf("Failed to init BSF: %v", err)
+	}
+
+	t.Log("Null BSF initialized successfully")
+}
+
+func TestBitstreamFilterH264(t *testing.T) {
+	if !BitstreamFilterExists(BSFNameH264Mp4ToAnnexB) {
+		t.Skip("h264_mp4toannexb filter not available")
+		return
+	}
+
+	// Create test video (H.264)
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Open decoder to get codec parameters
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	videoStream := decoder.VideoStream()
+	if videoStream == nil {
+		t.Fatal("No video stream")
+	}
+
+	// Create BSF
+	bsf, err := NewBitstreamFilter(BSFNameH264Mp4ToAnnexB)
+	if err != nil {
+		t.Fatalf("Failed to create BSF: %v", err)
+	}
+	defer bsf.Close()
+
+	// We need to read the codec parameters from the stream
+	// For now, just test that creation works
+	t.Log("h264_mp4toannexb BSF created successfully")
+}
+
 func TestStreamMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
