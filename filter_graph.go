@@ -265,14 +265,18 @@ func parseFilterChain(filters string) []filterSpec {
 	return result
 }
 
-// splitFilterChain splits by comma but respects brackets
+// splitFilterChain splits by comma but respects brackets and quotes
 func splitFilterChain(s string) []string {
 	var result []string
 	var current strings.Builder
 	depth := 0
+	inQuote := false
 
 	for _, c := range s {
 		switch c {
+		case '\'':
+			inQuote = !inQuote
+			current.WriteRune(c)
 		case '[', '(':
 			depth++
 			current.WriteRune(c)
@@ -280,7 +284,7 @@ func splitFilterChain(s string) []string {
 			depth--
 			current.WriteRune(c)
 		case ',':
-			if depth == 0 {
+			if depth == 0 && !inQuote {
 				result = append(result, current.String())
 				current.Reset()
 			} else {
@@ -439,7 +443,8 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 	// Push frame to buffersrc
 	var framePtr unsafe.Pointer
 	if frame != nil {
-		framePtr = unsafe.Pointer(frame)
+		// frame is *Frame (i.e., *unsafe.Pointer), so dereference to get the actual frame pointer
+		framePtr = (unsafe.Pointer)(*frame)
 	}
 
 	if err := avfilter.BufferSrcAddFrameFlags(g.bufferSrc, framePtr, avfilter.AV_BUFFERSRC_FLAG_KEEP_REF); err != nil {
@@ -467,7 +472,10 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 			return frames, errors.New("ffgo: failed to allocate output frame")
 		}
 		avutil.FrameRef(newFrame, g.outFrame)
-		frames = append(frames, (*Frame)(newFrame))
+		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
+		framePtr := new(Frame)
+		*framePtr = newFrame
+		frames = append(frames, framePtr)
 	}
 
 	return frames, nil
@@ -502,7 +510,10 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 			return frames, errors.New("ffgo: failed to allocate output frame")
 		}
 		avutil.FrameRef(newFrame, g.outFrame)
-		frames = append(frames, (*Frame)(newFrame))
+		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
+		framePtr := new(Frame)
+		*framePtr = newFrame
+		frames = append(frames, framePtr)
 	}
 
 	return frames, nil
