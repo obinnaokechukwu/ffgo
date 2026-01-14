@@ -381,7 +381,7 @@ func SetPacketStreamIndex(pkt Packet, idx int32) {
 }
 
 // AVCodecContext struct field offsets (for FFmpeg 6.x / avcodec 60.x)
-// Verified with offsetof()
+// Verified with offsetof() - IMPORTANT: These offsets vary between FFmpeg versions!
 const (
 	offsetCtxCodecType  = 12  // enum AVMediaType codec_type
 	offsetCtxCodecID    = 24  // enum AVCodecID codec_id
@@ -390,14 +390,14 @@ const (
 	offsetCtxTimeBase   = 100 // AVRational time_base
 	offsetCtxWidth      = 116 // int width
 	offsetCtxHeight     = 120 // int height
-	offsetCtxSampleRate = 124 // int sample_rate
 	offsetCtxGopSize    = 132 // int gop_size
 	offsetCtxPixFmt     = 136 // enum AVPixelFormat pix_fmt
-	offsetCtxSampleFmt  = 140 // enum AVSampleFormat sample_fmt
-	offsetCtxFrameSize  = 144 // int frame_size
 	offsetCtxMaxBFrames = 160 // int max_b_frames
-	offsetCtxChannels   = 492 // int channels (deprecated, but still accessible)
+	offsetCtxSampleRate = 352 // int sample_rate
+	offsetCtxSampleFmt  = 360 // enum AVSampleFormat sample_fmt
+	offsetCtxFrameSize  = 364 // int frame_size
 	offsetCtxFramerate  = 704 // AVRational framerate
+	offsetCtxChLayout   = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
 )
 
 // GetCtxWidth returns the width from codec context.
@@ -530,20 +530,13 @@ func SetCtxSampleRate(ctx Context, sampleRate int32) {
 }
 
 // GetCtxChannels returns the number of channels from codec context.
+// In FFmpeg 5.1+, this reads from ch_layout.nb_channels.
 func GetCtxChannels(ctx Context) int32 {
 	if ctx == nil {
 		return 0
 	}
-	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChannels))
-}
-
-// SetCtxChannels sets the number of channels in codec context.
-// Note: This sets the deprecated 'channels' field. For FFmpeg 5.1+, prefer ch_layout.
-func SetCtxChannels(ctx Context, channels int32) {
-	if ctx == nil {
-		return
-	}
-	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChannels)) = channels
+	// ch_layout.nb_channels is at offset 4 within the AVChannelLayout struct
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChLayout + 4))
 }
 
 // GetCtxSampleFmt returns the sample format from codec context.
@@ -569,6 +562,69 @@ func GetCtxFrameSize(ctx Context) int {
 		return 0
 	}
 	return int(*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFrameSize)))
+}
+
+// GetCtxChLayoutPtr returns a pointer to the ch_layout field in AVCodecContext.
+// This is used for FFmpeg 5.1+ channel layout API.
+func GetCtxChLayoutPtr(ctx Context) unsafe.Pointer {
+	if ctx == nil {
+		return nil
+	}
+	return unsafe.Pointer(uintptr(ctx) + offsetCtxChLayout)
+}
+
+// AVChannelLayout struct layout (FFmpeg 5.1+):
+// - order (int32): 4 bytes (AV_CHANNEL_ORDER_NATIVE = 1)
+// - nb_channels (int32): 4 bytes
+// - u.mask (uint64): 8 bytes (channel mask)
+// - opaque (void*): 8 bytes
+// Total: 24 bytes
+
+// Channel order constants
+const (
+	ChannelOrderUnspec = 0 // AV_CHANNEL_ORDER_UNSPEC
+	ChannelOrderNative = 1 // AV_CHANNEL_ORDER_NATIVE
+)
+
+// Common channel layout masks
+const (
+	ChannelLayoutMaskMono   uint64 = 0x4   // AV_CH_LAYOUT_MONO (FC)
+	ChannelLayoutMaskStereo uint64 = 0x3   // AV_CH_LAYOUT_STEREO (FL+FR)
+	ChannelLayoutMask5Point1 uint64 = 0x60F // AV_CH_LAYOUT_5POINT1
+)
+
+// SetCtxChannelLayout sets the channel layout for audio in codec context.
+// This manually sets the AVChannelLayout struct fields for FFmpeg 5.1+.
+func SetCtxChannelLayout(ctx Context, nbChannels int32) {
+	if ctx == nil {
+		return
+	}
+
+	// Get pointer to ch_layout struct
+	chLayoutPtr := uintptr(ctx) + offsetCtxChLayout
+
+	// Set order = AV_CHANNEL_ORDER_NATIVE (1)
+	*(*int32)(unsafe.Pointer(chLayoutPtr)) = ChannelOrderNative
+
+	// Set nb_channels
+	*(*int32)(unsafe.Pointer(chLayoutPtr + 4)) = nbChannels
+
+	// Set mask based on channel count
+	var mask uint64
+	switch nbChannels {
+	case 1:
+		mask = ChannelLayoutMaskMono
+	case 2:
+		mask = ChannelLayoutMaskStereo
+	case 6:
+		mask = ChannelLayoutMask5Point1
+	default:
+		// For other channel counts, use native order with computed mask
+		mask = (1 << uint(nbChannels)) - 1
+	}
+	*(*uint64)(unsafe.Pointer(chLayoutPtr + 8)) = mask
+
+	// opaque should be NULL (already zeroed)
 }
 
 // GetCtxTimeBase returns the time base from codec context.
