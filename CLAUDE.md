@@ -1,20 +1,15 @@
 # Claude Memory - ffgo Project
 
 ## Current Focus
-Continuing ffgo library implementation. Recently added:
-- FrameWrapper with PTS(), Data(), MediaType(), Width(), Height() methods
-- StreamInfo now has FrameRate and Channels fields
-- Decoder.ReadFrame() returns FrameWrapper with MediaType
-- Decoder.DurationTime(), SeekTime() for time.Duration support
-- Audio decoder support (OpenAudioDecoder, DecodeAudio)
-- Logging system with SetLogLevel(), SetLogCallback()
-- internal/shim package for shim library loading
-- transcode example
+Core library implementation is complete. All features working:
+- Decoder: NewDecoder, ReadFrame(), DecodeVideo(), DecodeAudio(), Seek(), SeekTime()
+- Encoder: NewEncoder, WriteFrame(), Close()
+- Scaler: NewScaler, Scale(), Close()
+- Custom I/O: NewDecoderFromReader, NewDecoderFromIO, NewEncoderToWriter, NewEncoderFromIO
+- Logging: SetLogLevel(), SetLogCallback()
+- All examples working: decode, encode, transcode, custom-io
 
-Still need to implement:
-- Custom I/O (IOCallbacks, NewDecoderFromIO, NewDecoderFromReader)
-- NewEncoderToWriter
-- custom-io example
+All tests pass with CGO_ENABLED=0.
 
 ## Project Facts
 - **Module path**: github.com/nonibytes/ffgo

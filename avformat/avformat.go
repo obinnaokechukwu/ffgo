@@ -58,9 +58,11 @@ var (
 
 	avFindBestStream func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
 
-	avioOpen     func(ctx *unsafe.Pointer, url string, flags int32) int32
-	avioClose    func(ctx unsafe.Pointer) int32
-	avioClosep   func(ctx *unsafe.Pointer) int32
+	avioOpen         func(ctx *unsafe.Pointer, url string, flags int32) int32
+	avioClose        func(ctx unsafe.Pointer) int32
+	avioClosep       func(ctx *unsafe.Pointer) int32
+	avioAllocContext func(buffer unsafe.Pointer, bufferSize, writeFlag int32, opaque unsafe.Pointer, readPacket, writePacket, seek uintptr) unsafe.Pointer
+	avioContextFree  func(ctx *unsafe.Pointer)
 
 	// Packet functions (in avcodec but often used with avformat)
 	avPacketAlloc func() unsafe.Pointer
@@ -110,6 +112,8 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avioOpen, lib, "avio_open")
 	purego.RegisterLibFunc(&avioClose, lib, "avio_close")
 	purego.RegisterLibFunc(&avioClosep, lib, "avio_closep")
+	purego.RegisterLibFunc(&avioAllocContext, lib, "avio_alloc_context")
+	purego.RegisterLibFunc(&avioContextFree, lib, "avio_context_free")
 
 	// Packet functions from avcodec
 	if libCodec != 0 {
@@ -544,6 +548,51 @@ const (
 	AVFMT_GLOBALHEADER = 0x0040 // Format wants global header
 )
 
+// Format context flag constants
+const (
+	AVFMT_FLAG_GENPTS       = 0x0001 // Generate missing pts
+	AVFMT_FLAG_IGNIDX       = 0x0002 // Ignore index
+	AVFMT_FLAG_NONBLOCK     = 0x0004 // Do not block when reading packets
+	AVFMT_FLAG_IGNDTS       = 0x0008 // Ignore DTS on frames that contain both DTS & PTS
+	AVFMT_FLAG_NOFILLIN     = 0x0010 // Do not infer values from other values
+	AVFMT_FLAG_NOPARSE      = 0x0020 // Do not use AVParsers
+	AVFMT_FLAG_NOBUFFER     = 0x0040 // Do not buffer frames
+	AVFMT_FLAG_CUSTOM_IO    = 0x0080 // The caller has supplied a custom AVIOContext
+	AVFMT_FLAG_DISCARD_CORR = 0x0100 // Discard corrupted frames
+	AVFMT_FLAG_FLUSH_PKTS   = 0x0200 // Flush AVIOContext every packet
+	AVFMT_FLAG_BITEXACT     = 0x0400 // Deterministic output
+	AVFMT_FLAG_SORT_DTS     = 0x10000 // Try to interleave output packets by dts
+	AVFMT_FLAG_FAST_SEEK    = 0x80000 // Enable fast seeking
+)
+
+// AVFormatContext flags field offset (for FFmpeg 6.x/7.x)
+const offsetFlags = 96
+
+// GetFlags returns the flags from a format context.
+func GetFlags(ctx FormatContext) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetFlags))
+}
+
+// SetFlags sets the flags on a format context.
+func SetFlags(ctx FormatContext, flags int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetFlags)) = flags
+}
+
+// AddFlags adds flags to a format context (OR operation).
+func AddFlags(ctx FormatContext, flags int32) {
+	if ctx == nil {
+		return
+	}
+	current := GetFlags(ctx)
+	SetFlags(ctx, current|flags)
+}
+
 // GetOutputFormat returns the output format from a format context.
 func GetOutputFormat(ctx FormatContext) OutputFormat {
 	if ctx == nil {
@@ -597,4 +646,30 @@ func GetStreamTimeBase(stream Stream) (num, den int32) {
 	num = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase))
 	den = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase + 4))
 	return
+}
+
+// IOAllocContext allocates and initializes an AVIOContext for custom I/O.
+// buffer should be allocated with av_malloc and will be freed by avio_context_free.
+// bufferSize is the size of buffer.
+// writeFlag is 1 if the buffer should be writable, 0 if readable.
+// opaque is passed to all callbacks.
+// readPacket, writePacket, seek are callback function pointers (use purego.NewCallback).
+func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaque unsafe.Pointer, readPacket, writePacket, seek uintptr) IOContext {
+	if avioAllocContext == nil {
+		return nil
+	}
+	wf := int32(0)
+	if writeFlag {
+		wf = 1
+	}
+	return avioAllocContext(buffer, int32(bufferSize), wf, opaque, readPacket, writePacket, seek)
+}
+
+// IOContextFree frees an AVIOContext allocated with IOAllocContext.
+func IOContextFree(ctx *IOContext) {
+	if ctx == nil || *ctx == nil || avioContextFree == nil {
+		return
+	}
+	avioContextFree(ctx)
+	*ctx = nil
 }
