@@ -106,9 +106,30 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 		audioStreamIdx: -1,
 	}
 
+	// Build AVDictionary from options
+	var avDict avutil.Dictionary
+	if opts != nil && len(opts.AVOptions) > 0 {
+		for key, value := range opts.AVOptions {
+			if err := avutil.DictSet(&avDict, key, value, 0); err != nil {
+				if avDict != nil {
+					avutil.DictFree(&avDict)
+				}
+				return nil, err
+			}
+		}
+	}
+
 	// Open input file
-	if err := avformat.OpenInput(&d.formatCtx, path, nil, nil); err != nil {
+	if err := avformat.OpenInput(&d.formatCtx, path, nil, &avDict); err != nil {
+		if avDict != nil {
+			avutil.DictFree(&avDict)
+		}
 		return nil, err
+	}
+
+	// Free any remaining dictionary entries (FFmpeg may have consumed some)
+	if avDict != nil {
+		avutil.DictFree(&avDict)
 	}
 
 	// Find stream info
