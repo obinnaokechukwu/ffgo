@@ -826,3 +826,137 @@ func TestSampleFormatConstants(t *testing.T) {
 		})
 	}
 }
+
+func TestNewResampler(t *testing.T) {
+	// Create a resampler for 44100Hz stereo S16 -> 48000Hz stereo FLTP
+	src := AudioFormat{
+		SampleRate:   44100,
+		Channels:     2,
+		SampleFormat: SampleFormatS16,
+	}
+	dst := AudioFormat{
+		SampleRate:   48000,
+		Channels:     2,
+		SampleFormat: SampleFormatFLTP,
+	}
+
+	resampler, err := NewResampler(src, dst)
+	if err != nil {
+		t.Fatalf("NewResampler failed: %v", err)
+	}
+	defer resampler.Close()
+
+	// Verify formats
+	if resampler.SrcFormat().SampleRate != 44100 {
+		t.Errorf("SrcFormat().SampleRate = %d, want 44100", resampler.SrcFormat().SampleRate)
+	}
+	if resampler.DstFormat().SampleRate != 48000 {
+		t.Errorf("DstFormat().SampleRate = %d, want 48000", resampler.DstFormat().SampleRate)
+	}
+
+	t.Logf("Resampler created: %dHz %dch -> %dHz %dch",
+		resampler.SrcFormat().SampleRate, resampler.SrcFormat().Channels,
+		resampler.DstFormat().SampleRate, resampler.DstFormat().Channels)
+}
+
+func TestResamplerValidation(t *testing.T) {
+	// Test invalid inputs
+	tests := []struct {
+		name string
+		src  AudioFormat
+		dst  AudioFormat
+	}{
+		{
+			name: "invalid src sample rate",
+			src:  AudioFormat{SampleRate: 0, Channels: 2},
+			dst:  AudioFormat{SampleRate: 48000, Channels: 2},
+		},
+		{
+			name: "invalid dst sample rate",
+			src:  AudioFormat{SampleRate: 44100, Channels: 2},
+			dst:  AudioFormat{SampleRate: 0, Channels: 2},
+		},
+		{
+			name: "invalid src channels",
+			src:  AudioFormat{SampleRate: 44100, Channels: 0},
+			dst:  AudioFormat{SampleRate: 48000, Channels: 2},
+		},
+		{
+			name: "invalid dst channels",
+			src:  AudioFormat{SampleRate: 44100, Channels: 2},
+			dst:  AudioFormat{SampleRate: 48000, Channels: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resampler, err := NewResampler(tt.src, tt.dst)
+			if err == nil {
+				resampler.Close()
+				t.Error("Expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestChannelLayoutConstants(t *testing.T) {
+	// Verify channel layout constants
+	tests := []struct {
+		name   string
+		layout ChannelLayout
+		want   int64
+	}{
+		{"Mono", ChannelLayoutMono, 0x4},
+		{"Stereo", ChannelLayoutStereo, 0x3},
+		{"5.1", ChannelLayout5Point1, 0x60F},
+		{"7.1", ChannelLayout7Point1, 0x63F},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if int64(tt.layout) != tt.want {
+				t.Errorf("%s = 0x%x, want 0x%x", tt.name, tt.layout, tt.want)
+			}
+		})
+	}
+}
+
+func TestChannelLayoutString(t *testing.T) {
+	tests := []struct {
+		layout ChannelLayout
+		want   string
+	}{
+		{ChannelLayoutMono, "mono"},
+		{ChannelLayoutStereo, "stereo"},
+		{ChannelLayout5Point1, "5.1"},
+		{ChannelLayout7Point1, "7.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.layout.String(); got != tt.want {
+				t.Errorf("layout.String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChannelLayoutNumChannels(t *testing.T) {
+	tests := []struct {
+		layout   ChannelLayout
+		channels int
+	}{
+		{ChannelLayoutMono, 1},
+		{ChannelLayoutStereo, 2},
+		{ChannelLayout5Point1, 6},
+		{ChannelLayout7Point1, 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.layout.String(), func(t *testing.T) {
+			if got := tt.layout.NumChannels(); got != tt.channels {
+				t.Errorf("layout.NumChannels() = %d, want %d", got, tt.channels)
+			}
+		})
+	}
+}
