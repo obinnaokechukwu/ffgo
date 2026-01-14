@@ -157,7 +157,7 @@ func TestDecoderDecodeVideo(t *testing.T) {
 
 func TestScaler(t *testing.T) {
 	// Create scaler
-	scaler, err := NewScaler(ScalerConfig{
+	scaler, err := NewScalerWithConfig(ScalerConfig{
 		SrcWidth:  320,
 		SrcHeight: 240,
 		SrcFormat: PixelFormatYUV420P,
@@ -198,7 +198,7 @@ func TestScalerWithDecoder(t *testing.T) {
 	}
 
 	// Create scaler to convert to RGB
-	scaler, err := NewScaler(ScalerConfig{
+	scaler, err := NewScalerWithConfig(ScalerConfig{
 		SrcWidth:  videoInfo.Width,
 		SrcHeight: videoInfo.Height,
 		SrcFormat: videoInfo.PixelFmt,

@@ -59,8 +59,22 @@ type ScalerConfig struct {
 	Flags ScaleFlags
 }
 
-// NewScaler creates a new scaler for the given configuration.
-func NewScaler(cfg ScalerConfig) (*Scaler, error) {
+// NewScaler creates a new scaler with the specified parameters.
+// This is the recommended way to create scalers.
+func NewScaler(srcW, srcH int, srcFmt PixelFormat, dstW, dstH int, dstFmt PixelFormat, flags ScaleFlags) (*Scaler, error) {
+	return NewScalerWithConfig(ScalerConfig{
+		SrcWidth:  srcW,
+		SrcHeight: srcH,
+		SrcFormat: srcFmt,
+		DstWidth:  dstW,
+		DstHeight: dstH,
+		DstFormat: dstFmt,
+		Flags:     flags,
+	})
+}
+
+// NewScalerWithConfig creates a new scaler for the given configuration.
+func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 	// Ensure FFmpeg is loaded
 	if err := bindings.Load(); err != nil {
 		return nil, err
@@ -124,19 +138,6 @@ func NewScaler(cfg ScalerConfig) (*Scaler, error) {
 	}
 
 	return s, nil
-}
-
-// NewScalerSimple creates a scaler with commonly used parameters.
-func NewScalerSimple(srcW, srcH int, srcFmt PixelFormat, dstW, dstH int, dstFmt PixelFormat) (*Scaler, error) {
-	return NewScaler(ScalerConfig{
-		SrcWidth:  srcW,
-		SrcHeight: srcH,
-		SrcFormat: srcFmt,
-		DstWidth:  dstW,
-		DstHeight: dstH,
-		DstFormat: dstFmt,
-		Flags:     ScaleBilinear,
-	})
 }
 
 // Scale converts and scales the source frame.
