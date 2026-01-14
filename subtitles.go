@@ -1,0 +1,434 @@
+//go:build !ios && !android && (amd64 || arm64)
+
+package ffgo
+
+import (
+	"errors"
+	"sync"
+	"time"
+	"unsafe"
+
+	"github.com/obinnaokechukwu/ffgo/avcodec"
+	"github.com/obinnaokechukwu/ffgo/avformat"
+	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+)
+
+// SubtitleType represents the type of subtitle content.
+type SubtitleType int
+
+const (
+	// SubtitleTypeNone indicates no subtitle data.
+	SubtitleTypeNone SubtitleType = iota
+	// SubtitleTypeBitmap indicates a graphical/bitmap subtitle (e.g., DVD subtitles).
+	SubtitleTypeBitmap
+	// SubtitleTypeText indicates plain text subtitles.
+	SubtitleTypeText
+	// SubtitleTypeASS indicates Advanced SubStation Alpha formatted text.
+	SubtitleTypeASS
+)
+
+// Subtitle represents a decoded subtitle.
+type Subtitle struct {
+	// StartTime is when the subtitle should appear.
+	StartTime time.Duration
+	// EndTime is when the subtitle should disappear.
+	EndTime time.Duration
+	// PTS is the presentation timestamp.
+	PTS int64
+	// Type indicates the subtitle format.
+	Type SubtitleType
+	// Text is the subtitle text (for text/ASS subtitles).
+	Text string
+	// Rects contains subtitle rectangles for bitmap subtitles.
+	Rects []SubtitleRect
+}
+
+// SubtitleRect represents a rectangular area for bitmap subtitles.
+type SubtitleRect struct {
+	X, Y          int
+	Width, Height int
+	// For bitmap subtitles, Data would contain the image data
+	// (not implemented in this version)
+}
+
+// SubtitleDecoder decodes subtitles from a media file.
+type SubtitleDecoder struct {
+	mu sync.Mutex
+
+	formatCtx      avformat.FormatContext
+	codecCtx       avcodec.Context
+	packet         avcodec.Packet
+	subtitleStreamIdx int
+	streamInfo     *StreamInfo
+
+	// AVSubtitle struct for decoding
+	subtitle unsafe.Pointer
+
+	closed bool
+}
+
+// NewSubtitleDecoder creates a decoder for subtitle streams.
+func NewSubtitleDecoder(inputPath string) (*SubtitleDecoder, error) {
+	if err := bindings.Load(); err != nil {
+		return nil, err
+	}
+
+	// Open input
+	var formatCtx avformat.FormatContext
+	if err := avformat.OpenInput(&formatCtx, inputPath, nil, nil); err != nil {
+		return nil, err
+	}
+
+	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
+		avformat.CloseInput(&formatCtx)
+		return nil, err
+	}
+
+	// Find subtitle stream
+	subtitleStreamIdx := avformat.FindBestStream(formatCtx, avutil.MediaTypeSubtitle, -1, -1, nil, 0)
+	if subtitleStreamIdx < 0 {
+		avformat.CloseInput(&formatCtx)
+		return nil, errors.New("ffgo: no subtitle stream found")
+	}
+
+	// Get codec info
+	stream := avformat.GetStream(formatCtx, int(subtitleStreamIdx))
+	codecPar := avformat.GetStreamCodecPar(stream)
+	codecID := avformat.GetCodecParCodecID(codecPar)
+
+	// Find decoder
+	decoder := avcodec.FindDecoder(codecID)
+	if decoder == nil {
+		avformat.CloseInput(&formatCtx)
+		return nil, errors.New("ffgo: subtitle decoder not found")
+	}
+
+	// Allocate codec context
+	codecCtx := avcodec.AllocContext3(decoder)
+	if codecCtx == nil {
+		avformat.CloseInput(&formatCtx)
+		return nil, errors.New("ffgo: failed to allocate codec context")
+	}
+
+	// Copy parameters
+	if err := avcodec.ParametersToContext(codecCtx, codecPar); err != nil {
+		avcodec.FreeContext(&codecCtx)
+		avformat.CloseInput(&formatCtx)
+		return nil, err
+	}
+
+	// Open decoder
+	if err := avcodec.Open2(codecCtx, decoder, nil); err != nil {
+		avcodec.FreeContext(&codecCtx)
+		avformat.CloseInput(&formatCtx)
+		return nil, err
+	}
+
+	// Allocate packet
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
+		avcodec.Close(codecCtx)
+		avcodec.FreeContext(&codecCtx)
+		avformat.CloseInput(&formatCtx)
+		return nil, errors.New("ffgo: failed to allocate packet")
+	}
+
+	// Allocate AVSubtitle struct (32 bytes)
+	subtitle := avutil.Malloc(32)
+	if subtitle == nil {
+		avcodec.PacketFree(&packet)
+		avcodec.Close(codecCtx)
+		avcodec.FreeContext(&codecCtx)
+		avformat.CloseInput(&formatCtx)
+		return nil, errors.New("ffgo: failed to allocate subtitle struct")
+	}
+
+	// Get stream info
+	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+	streamInfo := &StreamInfo{
+		Index:   int(subtitleStreamIdx),
+		Type:    MediaTypeSubtitle,
+		CodecID: CodecID(codecID),
+		TimeBase: Rational{Num: tbNum, Den: tbDen},
+	}
+
+	return &SubtitleDecoder{
+		formatCtx:         formatCtx,
+		codecCtx:          codecCtx,
+		packet:            packet,
+		subtitleStreamIdx: int(subtitleStreamIdx),
+		streamInfo:        streamInfo,
+		subtitle:          subtitle,
+	}, nil
+}
+
+// StreamInfo returns information about the subtitle stream.
+func (d *SubtitleDecoder) StreamInfo() *StreamInfo {
+	return d.streamInfo
+}
+
+// DecodeNext decodes the next subtitle.
+// Returns nil, nil when there are no more subtitles.
+func (d *SubtitleDecoder) DecodeNext() (*Subtitle, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.closed {
+		return nil, errors.New("ffgo: decoder is closed")
+	}
+
+	for {
+		// Read packet
+		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+			if avutil.IsEOF(err) {
+				return nil, nil // End of file
+			}
+			return nil, err
+		}
+
+		// Check if it's our subtitle stream
+		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
+		if int(streamIdx) != d.subtitleStreamIdx {
+			avcodec.PacketUnref(d.packet)
+			continue
+		}
+
+		// Decode subtitle
+		sub, err := d.decodeSubtitlePacket()
+		avcodec.PacketUnref(d.packet)
+
+		if err != nil {
+			return nil, err
+		}
+		if sub != nil {
+			return sub, nil
+		}
+		// No subtitle decoded (maybe need more packets), continue
+	}
+}
+
+// decodeSubtitlePacket decodes a subtitle from the current packet.
+func (d *SubtitleDecoder) decodeSubtitlePacket() (*Subtitle, error) {
+	// Clear the subtitle struct
+	clearSubtitle(d.subtitle)
+
+	// Decode subtitle using avcodec_decode_subtitle2
+	gotSub, err := avcodec.DecodeSubtitle2(d.codecCtx, d.subtitle, d.packet)
+	if err != nil {
+		return nil, err
+	}
+	if !gotSub {
+		return nil, nil
+	}
+
+	// Parse the decoded subtitle
+	sub := parseSubtitle(d.subtitle)
+
+	// Free subtitle resources
+	avcodec.SubtitleFree(d.subtitle)
+
+	return sub, nil
+}
+
+// Seek seeks to a position in the file.
+func (d *SubtitleDecoder) Seek(ts time.Duration) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.closed {
+		return errors.New("ffgo: decoder is closed")
+	}
+
+	timestamp := ts.Microseconds()
+	if err := avformat.SeekFrame(d.formatCtx, -1, timestamp, avformat.SeekFlagBackward); err != nil {
+		return err
+	}
+
+	avcodec.FlushBuffers(d.codecCtx)
+	return nil
+}
+
+// Close releases all resources.
+func (d *SubtitleDecoder) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.closed {
+		return nil
+	}
+	d.closed = true
+
+	if d.subtitle != nil {
+		avutil.Free(d.subtitle)
+	}
+	if d.packet != nil {
+		avcodec.PacketFree(&d.packet)
+	}
+	if d.codecCtx != nil {
+		avcodec.Close(d.codecCtx)
+		avcodec.FreeContext(&d.codecCtx)
+	}
+	if d.formatCtx != nil {
+		avformat.CloseInput(&d.formatCtx)
+	}
+
+	return nil
+}
+
+// AVSubtitle struct offsets (FFmpeg 6.x/7.x)
+const (
+	offsetSubFormat           = 0  // uint32_t format
+	offsetSubStartDisplayTime = 4  // uint32_t start_display_time
+	offsetSubEndDisplayTime   = 8  // uint32_t end_display_time
+	offsetSubNumRects         = 12 // unsigned num_rects
+	offsetSubRects            = 16 // AVSubtitleRect **rects
+	offsetSubPTS              = 24 // int64_t pts
+)
+
+// AVSubtitleRect struct offsets
+const (
+	offsetRectX        = 0  // int x
+	offsetRectY        = 4  // int y
+	offsetRectW        = 8  // int w
+	offsetRectH        = 12 // int h
+	offsetRectNbColors = 16 // int nb_colors
+	offsetRectType     = 72 // enum AVSubtitleType type
+	offsetRectText     = 80 // char *text
+	offsetRectASS      = 88 // char *ass
+)
+
+// AVSubtitleType constants
+const (
+	subtitleTypeNone   = 0
+	subtitleTypeBitmap = 1
+	subtitleTypeText   = 2
+	subtitleTypeASS    = 3
+)
+
+// clearSubtitle zeroes out the AVSubtitle struct.
+func clearSubtitle(sub unsafe.Pointer) {
+	for i := 0; i < 32; i++ {
+		*(*byte)(unsafe.Pointer(uintptr(sub) + uintptr(i))) = 0
+	}
+}
+
+// parseSubtitle extracts data from AVSubtitle into our Subtitle type.
+func parseSubtitle(sub unsafe.Pointer) *Subtitle {
+	startTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubStartDisplayTime))
+	endTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubEndDisplayTime))
+	pts := *(*int64)(unsafe.Pointer(uintptr(sub) + offsetSubPTS))
+	numRects := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubNumRects))
+
+	result := &Subtitle{
+		StartTime: time.Duration(startTime) * time.Millisecond,
+		EndTime:   time.Duration(endTime) * time.Millisecond,
+		PTS:       pts,
+	}
+
+	if numRects == 0 {
+		return result
+	}
+
+	// Get rectangles
+	rectsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(sub) + offsetSubRects))
+	if rectsPtr == nil {
+		return result
+	}
+
+	rectsArray := (*[1024]unsafe.Pointer)(rectsPtr)
+	for i := uint32(0); i < numRects && i < 1024; i++ {
+		rectPtr := rectsArray[i]
+		if rectPtr == nil {
+			continue
+		}
+
+		rectType := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectType))
+
+		switch rectType {
+		case subtitleTypeText:
+			result.Type = SubtitleTypeText
+			textPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectText))
+			if textPtr != nil {
+				result.Text = goString(textPtr)
+			}
+		case subtitleTypeASS:
+			result.Type = SubtitleTypeASS
+			assPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectASS))
+			if assPtr != nil {
+				result.Text = goString(assPtr)
+			}
+		case subtitleTypeBitmap:
+			result.Type = SubtitleTypeBitmap
+			x := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectX))
+			y := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectY))
+			w := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectW))
+			h := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectH))
+			result.Rects = append(result.Rects, SubtitleRect{
+				X:      int(x),
+				Y:      int(y),
+				Width:  int(w),
+				Height: int(h),
+			})
+		}
+	}
+
+	return result
+}
+
+// goString converts a C string to Go string.
+func goString(ptr unsafe.Pointer) string {
+	if ptr == nil {
+		return ""
+	}
+	var length int
+	for {
+		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
+		if b == 0 {
+			break
+		}
+		length++
+		if length > 4096 {
+			break
+		}
+	}
+	if length == 0 {
+		return ""
+	}
+	return string((*[4096]byte)(ptr)[:length:length])
+}
+
+// HasSubtitle returns true if the decoder has a subtitle stream.
+func (d *Decoder) HasSubtitle() bool {
+	numStreams := avformat.GetNumStreams(d.formatCtx)
+	for i := 0; i < numStreams; i++ {
+		stream := avformat.GetStream(d.formatCtx, i)
+		codecPar := avformat.GetStreamCodecPar(stream)
+		mediaType := avformat.GetCodecParType(codecPar)
+		if mediaType == avutil.MediaTypeSubtitle {
+			return true
+		}
+	}
+	return false
+}
+
+// SubtitleStream returns information about the first subtitle stream, or nil if none.
+func (d *Decoder) SubtitleStream() *StreamInfo {
+	numStreams := avformat.GetNumStreams(d.formatCtx)
+	for i := 0; i < numStreams; i++ {
+		stream := avformat.GetStream(d.formatCtx, i)
+		codecPar := avformat.GetStreamCodecPar(stream)
+		mediaType := avformat.GetCodecParType(codecPar)
+		if mediaType == avutil.MediaTypeSubtitle {
+			codecID := avformat.GetCodecParCodecID(codecPar)
+			tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+			return &StreamInfo{
+				Index:    i,
+				Type:     MediaTypeSubtitle,
+				CodecID:  CodecID(codecID),
+				TimeBase: Rational{Num: tbNum, Den: tbDen},
+			}
+		}
+	}
+	return nil
+}
