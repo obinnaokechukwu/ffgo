@@ -12,15 +12,30 @@ import (
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
 )
 
-// Encoder encodes video frames to a file.
+// Encoder encodes video and/or audio frames to a file.
 type Encoder struct {
 	mu sync.Mutex
 
 	formatCtx avformat.FormatContext
-	codecCtx  avcodec.Context
-	stream    avformat.Stream
-	packet    avcodec.Packet
 	ioCtx     avformat.IOContext
+
+	// Video encoding
+	videoCodecCtx avcodec.Context
+	videoStream   avformat.Stream
+	videoPacket   avcodec.Packet
+
+	// Audio encoding
+	audioCodecCtx  avcodec.Context
+	audioStream    avformat.Stream
+	audioPacket    avcodec.Packet
+	audioFrameSize int // Number of samples per frame for codec
+
+	// Deprecated: use videoCodecCtx
+	codecCtx avcodec.Context
+	// Deprecated: use videoStream
+	stream avformat.Stream
+	// Deprecated: use videoPacket
+	packet avcodec.Packet
 
 	width       int
 	height      int
@@ -29,8 +44,16 @@ type Encoder struct {
 	timeBaseNum int32
 	timeBaseDen int32
 
+	// Audio properties
+	sampleRate    int
+	channels      int
+	sampleFormat  SampleFormat
+	audioFrameCnt int64
+
 	headerWritten bool
 	closed        bool
+	hasVideo      bool
+	hasAudio      bool
 }
 
 // EncoderConfig configures encoder behavior (video-only, for compatibility).
@@ -147,6 +170,7 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 		pixFmt:      cfg.PixelFormat,
 		timeBaseNum: 1,
 		timeBaseDen: int32(cfg.FrameRate),
+		hasVideo:    true,
 	}
 
 	// Determine format from filename extension
@@ -167,19 +191,21 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 		return nil, errors.New("ffgo: encoder not found")
 	}
 
-	// Create stream
-	e.stream = avformat.NewStream(e.formatCtx, codec)
-	if e.stream == nil {
+	// Create video stream
+	e.videoStream = avformat.NewStream(e.formatCtx, codec)
+	if e.videoStream == nil {
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to create stream")
 	}
+	e.stream = e.videoStream // Backward compatibility
 
-	// Create codec context
-	e.codecCtx = avcodec.AllocContext3(codec)
-	if e.codecCtx == nil {
+	// Create video codec context
+	e.videoCodecCtx = avcodec.AllocContext3(codec)
+	if e.videoCodecCtx == nil {
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to allocate codec context")
 	}
+	e.codecCtx = e.videoCodecCtx // Backward compatibility
 
 	// Configure codec context
 	avcodec.SetCtxWidth(e.codecCtx, int32(cfg.Width))
@@ -222,12 +248,13 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 		avformat.SetIOContext(e.formatCtx, e.ioCtx)
 	}
 
-	// Allocate packet
-	e.packet = avcodec.PacketAlloc()
-	if e.packet == nil {
+	// Allocate video packet
+	e.videoPacket = avcodec.PacketAlloc()
+	if e.videoPacket == nil {
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to allocate packet")
 	}
+	e.packet = e.videoPacket // Backward compatibility
 
 	return e, nil
 }
@@ -268,7 +295,105 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 		cfg.BitRate = 2000000
 	}
 
-	return NewEncoder(path, cfg)
+	// Create video encoder
+	enc, err := NewEncoder(path, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup audio if configured
+	if opts.Audio != nil {
+		if err := enc.setupAudio(opts.Audio); err != nil {
+			enc.Close()
+			return nil, err
+		}
+	}
+
+	return enc, nil
+}
+
+// setupAudio adds an audio stream to the encoder.
+func (e *Encoder) setupAudio(cfg *AudioEncoderConfig) error {
+	// Apply defaults
+	codecID := cfg.Codec
+	if codecID == CodecIDNone {
+		codecID = CodecIDAAC
+	}
+	sampleRate := cfg.SampleRate
+	if sampleRate <= 0 {
+		sampleRate = 48000
+	}
+	channels := cfg.Channels
+	if channels <= 0 {
+		channels = 2
+	}
+	bitrate := cfg.Bitrate
+	if bitrate <= 0 {
+		bitrate = 128000
+	}
+
+	// Find audio encoder
+	audioCodec := avcodec.FindEncoder(codecID)
+	if audioCodec == nil {
+		return errors.New("ffgo: audio encoder not found")
+	}
+
+	// Create audio stream
+	e.audioStream = avformat.NewStream(e.formatCtx, audioCodec)
+	if e.audioStream == nil {
+		return errors.New("ffgo: failed to create audio stream")
+	}
+
+	// Create audio codec context
+	e.audioCodecCtx = avcodec.AllocContext3(audioCodec)
+	if e.audioCodecCtx == nil {
+		return errors.New("ffgo: failed to allocate audio codec context")
+	}
+
+	// Configure audio codec context
+	avcodec.SetCtxSampleRate(e.audioCodecCtx, int32(sampleRate))
+	avcodec.SetCtxChannels(e.audioCodecCtx, int32(channels))
+	avcodec.SetCtxSampleFmt(e.audioCodecCtx, int32(SampleFormatFLTP)) // AAC requires FLTP
+	avcodec.SetCtxBitRate(e.audioCodecCtx, bitrate)
+	avcodec.SetCtxTimeBase(e.audioCodecCtx, 1, int32(sampleRate))
+
+	// Set global header flag if needed
+	if avformat.NeedsGlobalHeader(e.formatCtx) {
+		flags := avcodec.GetCtxFlags(e.audioCodecCtx)
+		avcodec.SetCtxFlags(e.audioCodecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	}
+
+	// Open audio codec
+	if err := avcodec.Open2(e.audioCodecCtx, audioCodec, nil); err != nil {
+		avcodec.FreeContext(&e.audioCodecCtx)
+		return err
+	}
+
+	// Copy codec parameters to stream
+	codecPar := avformat.GetStreamCodecPar(e.audioStream)
+	if err := avcodec.ParametersFromContext(codecPar, e.audioCodecCtx); err != nil {
+		return err
+	}
+
+	// Set stream time base
+	avformat.SetStreamTimeBase(e.audioStream, 1, int32(sampleRate))
+
+	// Allocate audio packet
+	e.audioPacket = avcodec.PacketAlloc()
+	if e.audioPacket == nil {
+		return errors.New("ffgo: failed to allocate audio packet")
+	}
+
+	// Store audio properties
+	e.sampleRate = sampleRate
+	e.channels = channels
+	e.sampleFormat = SampleFormatFLTP
+	e.hasAudio = true
+
+	// Get frame size from codec (needed for encoding)
+	e.audioFrameSize = avcodec.GetCtxFrameSize(e.audioCodecCtx)
+
+	return nil
 }
 
 // WriteHeader writes the file header. Must be called before WriteFrame.
@@ -351,10 +476,71 @@ func (e *Encoder) WriteVideoFrame(frame Frame) error {
 }
 
 // WriteAudioFrame encodes and writes an audio frame.
-// Note: Audio encoding is not yet fully implemented. This function is provided
-// for API compatibility and will return an error if called.
 func (e *Encoder) WriteAudioFrame(frame Frame) error {
-	return errors.New("ffgo: audio encoding not yet implemented")
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+	if !e.hasAudio {
+		return errors.New("ffgo: encoder was not configured with audio")
+	}
+	if e.audioCodecCtx == nil {
+		return errors.New("ffgo: audio codec context not initialized")
+	}
+
+	// Ensure header is written
+	if !e.headerWritten {
+		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
+			return err
+		}
+		e.headerWritten = true
+	}
+
+	// Set PTS for audio frame
+	if frame != nil {
+		pts := e.audioFrameCnt
+		avutil.SetFramePTS(frame, pts)
+		e.audioFrameCnt += int64(avutil.GetFrameNbSamples(frame))
+	}
+
+	// Send frame to encoder
+	if err := avcodec.SendFrame(e.audioCodecCtx, frame); err != nil {
+		if avutil.IsEOF(err) {
+			return nil
+		}
+		return err
+	}
+
+	// Receive and write packets
+	for {
+		avcodec.PacketUnref(e.audioPacket)
+
+		err := avcodec.ReceivePacket(e.audioCodecCtx, e.audioPacket)
+		if err != nil {
+			if avutil.IsEOF(err) || avutil.IsAgain(err) {
+				break
+			}
+			return err
+		}
+
+		// Set stream index
+		avcodec.SetPacketStreamIndex(e.audioPacket, avformat.GetStreamIndex(e.audioStream))
+
+		// Rescale timestamps to stream time base
+		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(e.audioStream)
+		avcodec.RescalePacketTS(e.audioPacket,
+			avcodec.GetCtxTimeBase(e.audioCodecCtx),
+			avutil.NewRational(streamTbNum, streamTbDen))
+
+		// Write packet
+		if err := avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Flush flushes the encoder and writes remaining frames.
@@ -385,6 +571,41 @@ func (e *Encoder) FrameCount() int64 {
 	return e.frameCount
 }
 
+// HasAudio returns true if the encoder has audio.
+func (e *Encoder) HasAudio() bool {
+	return e.hasAudio
+}
+
+// HasVideo returns true if the encoder has video.
+func (e *Encoder) HasVideo() bool {
+	return e.hasVideo
+}
+
+// AudioFrameSize returns the number of samples per audio frame.
+// This is needed when creating audio frames for encoding.
+// Returns 0 if no audio is configured.
+func (e *Encoder) AudioFrameSize() int {
+	return e.audioFrameSize
+}
+
+// SampleRate returns the audio sample rate.
+// Returns 0 if no audio is configured.
+func (e *Encoder) SampleRate() int {
+	return e.sampleRate
+}
+
+// Channels returns the number of audio channels.
+// Returns 0 if no audio is configured.
+func (e *Encoder) Channels() int {
+	return e.channels
+}
+
+// SampleFormat returns the audio sample format.
+// Returns SampleFormatNone if no audio is configured.
+func (e *Encoder) AudioSampleFormat() SampleFormat {
+	return e.sampleFormat
+}
+
 // Close finalizes and closes the encoder.
 func (e *Encoder) Close() error {
 	e.mu.Lock()
@@ -397,20 +618,41 @@ func (e *Encoder) Close() error {
 
 	var firstErr error
 
-	// Flush encoder
-	if e.codecCtx != nil && e.headerWritten {
+	// Flush video encoder
+	if e.videoCodecCtx != nil && e.headerWritten {
 		// Flush by sending nil frame
-		avcodec.SendFrame(e.codecCtx, nil)
+		avcodec.SendFrame(e.videoCodecCtx, nil)
 
 		// Drain remaining packets
 		for {
-			avcodec.PacketUnref(e.packet)
-			err := avcodec.ReceivePacket(e.codecCtx, e.packet)
+			avcodec.PacketUnref(e.videoPacket)
+			err := avcodec.ReceivePacket(e.videoCodecCtx, e.videoPacket)
 			if err != nil {
 				break
 			}
-			avcodec.SetPacketStreamIndex(e.packet, avformat.GetStreamIndex(e.stream))
-			avformat.InterleavedWriteFrame(e.formatCtx, e.packet)
+			avcodec.SetPacketStreamIndex(e.videoPacket, avformat.GetStreamIndex(e.videoStream))
+			avformat.InterleavedWriteFrame(e.formatCtx, e.videoPacket)
+		}
+	}
+
+	// Flush audio encoder
+	if e.audioCodecCtx != nil && e.headerWritten {
+		// Flush by sending nil frame
+		avcodec.SendFrame(e.audioCodecCtx, nil)
+
+		// Drain remaining packets
+		for {
+			avcodec.PacketUnref(e.audioPacket)
+			err := avcodec.ReceivePacket(e.audioCodecCtx, e.audioPacket)
+			if err != nil {
+				break
+			}
+			avcodec.SetPacketStreamIndex(e.audioPacket, avformat.GetStreamIndex(e.audioStream))
+			streamTbNum, streamTbDen := avformat.GetStreamTimeBase(e.audioStream)
+			avcodec.RescalePacketTS(e.audioPacket,
+				avcodec.GetCtxTimeBase(e.audioCodecCtx),
+				avutil.NewRational(streamTbNum, streamTbDen))
+			avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket)
 		}
 	}
 
@@ -427,14 +669,28 @@ func (e *Encoder) Close() error {
 
 // cleanup releases all resources.
 func (e *Encoder) cleanup() {
-	// Free packet
-	if e.packet != nil {
-		avcodec.PacketFree(&e.packet)
+	// Free video packet
+	if e.videoPacket != nil {
+		avcodec.PacketFree(&e.videoPacket)
+	}
+	// Also clear deprecated alias
+	e.packet = nil
+
+	// Free video codec context
+	if e.videoCodecCtx != nil {
+		avcodec.FreeContext(&e.videoCodecCtx)
+	}
+	// Also clear deprecated alias
+	e.codecCtx = nil
+
+	// Free audio packet
+	if e.audioPacket != nil {
+		avcodec.PacketFree(&e.audioPacket)
 	}
 
-	// Free codec context
-	if e.codecCtx != nil {
-		avcodec.FreeContext(&e.codecCtx)
+	// Free audio codec context
+	if e.audioCodecCtx != nil {
+		avcodec.FreeContext(&e.audioCodecCtx)
 	}
 
 	// Close I/O context
