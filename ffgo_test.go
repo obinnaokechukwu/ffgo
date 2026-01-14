@@ -2230,6 +2230,41 @@ func TestGetKeyframes(t *testing.T) {
 	}
 }
 
+func TestNewNetworkDecoder(t *testing.T) {
+	// Test that NewNetworkDecoder works with local files (simulating network behavior)
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Test with protocol options using local file
+	// This tests that the options are properly passed through
+	decoder, err := NewNetworkDecoder("file://"+testFile, &ProtocolOptions{
+		Timeout:    5 * time.Second,
+		BufferSize: 32768,
+	})
+	if err != nil {
+		t.Fatalf("Failed to open with network decoder: %v", err)
+	}
+	defer decoder.Close()
+
+	// Verify we can read the file
+	if decoder.VideoStream() == nil {
+		t.Error("Expected video stream")
+	}
+
+	t.Logf("Video: %dx%d", decoder.VideoStream().Width, decoder.VideoStream().Height)
+
+	// Decode a frame to verify full functionality
+	frame, err := decoder.DecodeVideo()
+	if err != nil {
+		t.Errorf("Failed to decode frame: %v", err)
+	}
+	if frame == nil {
+		t.Error("Expected a frame")
+	}
+}
+
 func TestGetChapters(t *testing.T) {
 	// Create a test video with chapters using ffmpeg
 	tmpDir := t.TempDir()

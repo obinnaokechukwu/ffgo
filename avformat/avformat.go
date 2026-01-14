@@ -41,7 +41,7 @@ const (
 
 // Function bindings
 var (
-	avformatOpenInput          func(ctx *unsafe.Pointer, url string, fmt, options unsafe.Pointer) int32
+	avformatOpenInput          func(ctx *unsafe.Pointer, url string, fmt unsafe.Pointer, options *unsafe.Pointer) int32
 	avformatCloseInput         func(ctx *unsafe.Pointer)
 	avformatFindStreamInfo     func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
 	avformatAllocContext       func() unsafe.Pointer
@@ -153,15 +153,17 @@ func FreeContext(ctx FormatContext) {
 }
 
 // OpenInput opens an input file.
+// options is a pointer to an AVDictionary that may be modified by FFmpeg.
 func OpenInput(ctx *FormatContext, url string, fmt InputFormat, options *avutil.Dictionary) error {
 	if avformatOpenInput == nil {
 		return bindings.ErrNotLoaded
 	}
-	var opts unsafe.Pointer
+	// Pass nil or a pointer to the dictionary pointer
+	var optsPtr *unsafe.Pointer
 	if options != nil {
-		opts = *options
+		optsPtr = options
 	}
-	ret := avformatOpenInput(ctx, url, fmt, opts)
+	ret := avformatOpenInput(ctx, url, fmt, optsPtr)
 	runtime.KeepAlive(url)
 	if ret < 0 {
 		return avutil.NewError(ret, "avformat_open_input")
