@@ -432,8 +432,10 @@ const (
 	offsetCtxSampleRate = 352 // int sample_rate
 	offsetCtxSampleFmt  = 360 // enum AVSampleFormat sample_fmt
 	offsetCtxFrameSize  = 364 // int frame_size
-	offsetCtxFramerate  = 704 // AVRational framerate
-	offsetCtxChLayout   = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
+	offsetCtxFramerate      = 704 // AVRational framerate
+	offsetCtxHWFramesCtx    = 840 // AVBufferRef *hw_frames_ctx
+	offsetCtxHWDeviceCtx    = 864 // AVBufferRef *hw_device_ctx
+	offsetCtxChLayout       = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
 )
 
 // GetCtxWidth returns the width from codec context.
@@ -734,4 +736,40 @@ func rescaleQ(a int64, bq, cq avutil.Rational) int64 {
 		return (a*b + c/2) / c
 	}
 	return (a*b - c/2) / c
+}
+
+// GetCtxHWDeviceCtx returns the hardware device context from codec context.
+func GetCtxHWDeviceCtx(ctx Context) avutil.HWDeviceContext {
+	if ctx == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx))
+}
+
+// SetCtxHWDeviceCtx sets the hardware device context on codec context.
+// The buffer reference is copied, so caller retains ownership.
+func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) {
+	if ctx == nil {
+		return
+	}
+	// Create a new reference to the buffer
+	ref := avutil.NewBufferRef(hwDeviceCtx)
+	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx)) = ref
+}
+
+// GetCtxHWFramesCtx returns the hardware frames context from codec context.
+func GetCtxHWFramesCtx(ctx Context) avutil.HWFramesContext {
+	if ctx == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx))
+}
+
+// SetCtxHWFramesCtx sets the hardware frames context on codec context.
+func SetCtxHWFramesCtx(ctx Context, hwFramesCtx avutil.HWFramesContext) {
+	if ctx == nil {
+		return
+	}
+	ref := avutil.NewBufferRef(hwFramesCtx)
+	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx)) = ref
 }

@@ -1566,6 +1566,105 @@ func TestMetadataWrite(t *testing.T) {
 	}
 }
 
+func TestAvailableHWDeviceTypes(t *testing.T) {
+	types := AvailableHWDeviceTypes()
+	t.Logf("Available hardware device types: %d", len(types))
+	for _, hwType := range types {
+		name := GetHWDeviceTypeName(hwType)
+		t.Logf("  - %s (%d)", name, hwType)
+	}
+}
+
+func TestHWDevice(t *testing.T) {
+	// Find available hardware device
+	types := AvailableHWDeviceTypes()
+	if len(types) == 0 {
+		t.Skip("No hardware acceleration available")
+		return
+	}
+
+	hwType := types[0]
+	t.Logf("Testing with %s", GetHWDeviceTypeName(hwType))
+
+	device, err := NewHWDevice(hwType, "")
+	if err != nil {
+		t.Skipf("Failed to create HW device: %v", err)
+		return
+	}
+	defer device.Close()
+
+	if device.Type() != hwType {
+		t.Errorf("Expected type %d, got %d", hwType, device.Type())
+	}
+
+	if device.TypeName() == "" {
+		t.Error("TypeName returned empty string")
+	}
+
+	if device.Context() == nil {
+		t.Error("Context returned nil")
+	}
+
+	t.Logf("HW device created: %s", device.TypeName())
+}
+
+func TestHWDecoder(t *testing.T) {
+	// Find available hardware device
+	types := AvailableHWDeviceTypes()
+	if len(types) == 0 {
+		t.Skip("No hardware acceleration available")
+		return
+	}
+
+	hwType := types[0]
+	t.Logf("Testing HW decoding with %s", GetHWDeviceTypeName(hwType))
+
+	// Create HW device
+	device, err := NewHWDevice(hwType, "")
+	if err != nil {
+		t.Skipf("Failed to create HW device: %v", err)
+		return
+	}
+	defer device.Close()
+
+	// Create a test video file
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Create HW decoder
+	hwDec, err := NewHWDecoder(testFile, &HWDecoderConfig{
+		HWDevice:             device,
+		OutputSoftwareFrames: true,
+	})
+	if err != nil {
+		t.Logf("HW decoder not supported for this codec/device: %v", err)
+		return
+	}
+	defer hwDec.Close()
+
+	t.Logf("Video: %dx%d", hwDec.VideoStream().Width, hwDec.VideoStream().Height)
+
+	// Decode a few frames
+	frameCount := 0
+	for frameCount < 5 {
+		frame, err := hwDec.DecodeVideo()
+		if err != nil {
+			if IsEOF(err) {
+				break
+			}
+			t.Logf("Decode error (may be expected for some HW decoders): %v", err)
+			break
+		}
+		if frame != nil {
+			frameCount++
+		}
+	}
+
+	t.Logf("Decoded %d frames using hardware acceleration", frameCount)
+}
+
 func TestStreamMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
