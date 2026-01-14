@@ -2515,6 +2515,131 @@ func padNumber(n, width int) string {
 	return fmt.Sprintf(format, n)
 }
 
+func TestSubtitleRenderer(t *testing.T) {
+	// Create test video file
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create a simple SRT subtitle file
+	srtPath := filepath.Join(tmpDir, "test.srt")
+	srtContent := `1
+00:00:00,000 --> 00:00:02,000
+Hello World
+
+2
+00:00:02,000 --> 00:00:04,000
+This is a test
+`
+	if err := os.WriteFile(srtPath, []byte(srtContent), 0644); err != nil {
+		t.Fatalf("Failed to write SRT file: %v", err)
+	}
+
+	// Open video to get frame dimensions
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("NewDecoder failed: %v", err)
+	}
+	defer decoder.Close()
+
+	videoInfo := decoder.VideoStream()
+	if videoInfo == nil {
+		t.Fatal("No video stream")
+	}
+
+	// Create subtitle renderer
+	renderer, err := NewSubtitleRenderer(srtPath, videoInfo.Width, videoInfo.Height)
+	if err != nil {
+		t.Fatalf("NewSubtitleRenderer failed: %v", err)
+	}
+	defer renderer.Close()
+
+	// Verify subtitle path
+	if renderer.SubtitlePath() != srtPath {
+		t.Errorf("SubtitlePath() = %q, want %q", renderer.SubtitlePath(), srtPath)
+	}
+
+	// Decode a video frame
+	frame, err := decoder.DecodeVideo()
+	if err != nil {
+		t.Fatalf("DecodeVideo failed: %v", err)
+	}
+	if frame == nil {
+		t.Fatal("No video frame decoded")
+	}
+
+	// Render subtitle onto frame
+	outFrame, err := renderer.Render(frame)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+
+	if outFrame == nil {
+		t.Fatal("Render returned nil frame")
+	}
+
+	// Verify output frame dimensions
+	outWidth := avutil.GetFrameWidth(outFrame)
+	outHeight := avutil.GetFrameHeight(outFrame)
+	if outWidth != int32(videoInfo.Width) || outHeight != int32(videoInfo.Height) {
+		t.Errorf("Output frame dimensions: %dx%d, want %dx%d", outWidth, outHeight, videoInfo.Width, videoInfo.Height)
+	}
+
+	t.Log("SubtitleRenderer test passed")
+}
+
+func TestSubtitleRendererWithOptions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a simple SRT subtitle file
+	srtPath := filepath.Join(tmpDir, "test.srt")
+	srtContent := `1
+00:00:00,000 --> 00:00:01,000
+Test
+`
+	if err := os.WriteFile(srtPath, []byte(srtContent), 0644); err != nil {
+		t.Fatalf("Failed to write SRT file: %v", err)
+	}
+
+	// Create subtitle renderer with full options including force_style
+	renderer, err := NewSubtitleRendererWithOptions(srtPath, 320, 240, &SubtitleRendererOptions{
+		FontSize:     24,
+		PrimaryColor: "&HFFFFFF&",
+		MarginV:      20,
+		CharEncoding: "UTF-8",
+	})
+	if err != nil {
+		t.Fatalf("NewSubtitleRendererWithOptions failed: %v", err)
+	}
+	defer renderer.Close()
+
+	t.Log("SubtitleRendererWithOptions created successfully")
+}
+
+func TestSubtitleFormat(t *testing.T) {
+	tests := []struct {
+		format SubtitleFormat
+		want   string
+	}{
+		{SubtitleFormatSRT, "srt"},
+		{SubtitleFormatASS, "ass"},
+		{SubtitleFormatSSA, "ssa"},
+		{SubtitleFormatWebVTT, "vtt"},
+		{SubtitleFormatMOVText, "mov_text"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.format.String(); got != tt.want {
+				t.Errorf("SubtitleFormat.String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMuxer(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "muxer_output.mp4")
