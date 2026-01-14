@@ -491,13 +491,15 @@ func GetStreamCodecPar(stream Stream) avcodec.Parameters {
 // AVCodecParameters struct field offsets (for FFmpeg 6.x/7.x)
 // Verified with offsetof() on FFmpeg 7.1.1
 const (
-	offsetCodecParType       = 0   // enum AVMediaType codec_type
-	offsetCodecParCodecID    = 4   // enum AVCodecID codec_id
-	offsetCodecParFormat     = 28  // int format (pixel format or sample format)
-	offsetCodecParWidth      = 56  // int width
-	offsetCodecParHeight     = 60  // int height
-	offsetCodecParSampleRate = 116 // int sample_rate
-	offsetCodecParChannels   = 148 // ch_layout.nb_channels (int in AVChannelLayout at offset 136 + 12)
+	offsetCodecParType          = 0   // enum AVMediaType codec_type
+	offsetCodecParCodecID       = 4   // enum AVCodecID codec_id
+	offsetCodecParExtradata     = 16  // uint8_t *extradata
+	offsetCodecParExtradataSize = 24  // int extradata_size
+	offsetCodecParFormat        = 28  // int format (pixel format or sample format)
+	offsetCodecParWidth         = 56  // int width
+	offsetCodecParHeight        = 60  // int height
+	offsetCodecParSampleRate    = 116 // int sample_rate
+	offsetCodecParChannels      = 148 // ch_layout.nb_channels (int in AVChannelLayout at offset 136 + 12)
 )
 
 // GetCodecParType returns the media type from codec parameters.
@@ -554,6 +556,34 @@ func GetCodecParChannels(par avcodec.Parameters) int32 {
 		return 0
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChannels))
+}
+
+// GetCodecParExtradata returns the extradata bytes from codec parameters.
+// This is used for attachment data in MKV/other containers.
+func GetCodecParExtradata(par avcodec.Parameters) []byte {
+	if par == nil {
+		return nil
+	}
+	dataPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradata))
+	if dataPtr == nil {
+		return nil
+	}
+	size := *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradataSize))
+	if size <= 0 {
+		return nil
+	}
+	// Make a copy of the data to return to Go
+	result := make([]byte, size)
+	copy(result, unsafe.Slice((*byte)(dataPtr), size))
+	return result
+}
+
+// GetCodecParExtradataSize returns the size of extradata.
+func GetCodecParExtradataSize(par avcodec.Parameters) int {
+	if par == nil {
+		return 0
+	}
+	return int(*(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParExtradataSize)))
 }
 
 // GetStreamAvgFrameRate returns the average frame rate (num/den).
