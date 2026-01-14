@@ -1296,3 +1296,157 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 
 	t.Logf("Encoded 10 frames with advanced options to %s (%d bytes)", outPath, stat.Size())
 }
+
+// Tests for stream copy / remuxer
+
+func TestRemuxer(t *testing.T) {
+	// Create test video file first
+	srcDir := t.TempDir()
+	srcPath := filepath.Join(srcDir, "source.mp4")
+
+	// Create a source file with encoder
+	enc, err := NewEncoder(srcPath, EncoderConfig{
+		Width:     160,
+		Height:    120,
+		FrameRate: 30,
+		BitRate:   500000,
+		GOPSize:   5,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	// Create and write frames
+	frame := FrameAlloc()
+	if frame == nil {
+		enc.Close()
+		t.Fatal("Failed to allocate frame")
+	}
+
+	avutil.SetFrameWidth(frame, 160)
+	avutil.SetFrameHeight(frame, 120)
+	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	if ret := avutil.FrameGetBuffer(frame, 0); ret < 0 {
+		FrameFree(&frame)
+		enc.Close()
+		t.Fatalf("FrameGetBuffer failed: %d", ret)
+	}
+
+	for i := 0; i < 30; i++ {
+		if err := enc.WriteFrame(frame); err != nil {
+			FrameFree(&frame)
+			enc.Close()
+			t.Fatalf("WriteFrame failed: %v", err)
+		}
+	}
+	FrameFree(&frame)
+	enc.Close()
+
+	// Now remux to MKV
+	dstDir := t.TempDir()
+	dstPath := filepath.Join(dstDir, "remuxed.mkv")
+
+	decoder, err := NewDecoder(srcPath)
+	if err != nil {
+		t.Fatalf("Failed to open source: %v", err)
+	}
+
+	remuxer, err := NewRemuxer(dstPath, decoder, nil)
+	if err != nil {
+		decoder.Close()
+		t.Fatalf("Failed to create remuxer: %v", err)
+	}
+
+	// Remux all packets
+	if err := remuxer.Remux(decoder); err != nil {
+		remuxer.Close()
+		decoder.Close()
+		t.Fatalf("Remux failed: %v", err)
+	}
+
+	// Close remuxer BEFORE checking file size (to write trailer)
+	remuxer.Close()
+	decoder.Close()
+
+	// Verify output file exists
+	stat, err := os.Stat(dstPath)
+	if err != nil {
+		t.Fatalf("Output file not created: %v", err)
+	}
+	if stat.Size() == 0 {
+		t.Error("Output file is empty")
+	}
+
+	t.Logf("Remuxed %s to %s (%d bytes)", srcPath, dstPath, stat.Size())
+}
+
+func TestRemuxerSelectStreams(t *testing.T) {
+	// Create test video file
+	srcDir := t.TempDir()
+	srcPath := filepath.Join(srcDir, "source.mp4")
+
+	enc, err := NewEncoderWithOptions(srcPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			FrameRate:   Rational{Num: 30, Den: 1},
+			Bitrate:     500000,
+			PixelFormat: PixelFormatYUV420P,
+			GOPSize:     5,
+		},
+		Audio: &AudioEncoderConfig{
+			SampleRate: 48000,
+			Channels:   2,
+			Bitrate:    64000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	// Write video frames
+	frame := FrameAlloc()
+	if frame == nil {
+		enc.Close()
+		t.Fatal("Failed to allocate frame")
+	}
+	avutil.SetFrameWidth(frame, 160)
+	avutil.SetFrameHeight(frame, 120)
+	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	avutil.FrameGetBuffer(frame, 0)
+
+	for i := 0; i < 10; i++ {
+		enc.WriteFrame(frame)
+	}
+	FrameFree(&frame)
+	enc.Close()
+
+	// Open source and remux only video stream
+	decoder, err := NewDecoder(srcPath)
+	if err != nil {
+		t.Fatalf("Failed to open source: %v", err)
+	}
+	defer decoder.Close()
+
+	dstDir := t.TempDir()
+	dstPath := filepath.Join(dstDir, "video_only.mp4")
+
+	// Only copy video stream (index 0)
+	remuxer, err := NewRemuxer(dstPath, decoder, &RemuxerConfig{
+		InputStreams: []int{0}, // Only video
+	})
+	if err != nil {
+		t.Fatalf("Failed to create remuxer: %v", err)
+	}
+	defer remuxer.Close()
+
+	if remuxer.NumOutputStreams() != 1 {
+		t.Errorf("Expected 1 output stream, got %d", remuxer.NumOutputStreams())
+	}
+
+	if err := remuxer.Remux(decoder); err != nil {
+		t.Fatalf("Remux failed: %v", err)
+	}
+
+	t.Log("Successfully remuxed video-only stream")
+}

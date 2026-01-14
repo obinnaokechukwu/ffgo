@@ -379,6 +379,11 @@ func GetNumStreams(ctx FormatContext) int {
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNumStreams)))
 }
 
+// GetNbStreams is an alias for GetNumStreams (matches FFmpeg naming).
+func GetNbStreams(ctx FormatContext) int {
+	return GetNumStreams(ctx)
+}
+
 // GetStream returns the stream at the given index.
 func GetStream(ctx FormatContext, index int) Stream {
 	if ctx == nil || index < 0 {
