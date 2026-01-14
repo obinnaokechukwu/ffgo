@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -2384,6 +2385,161 @@ title=Main Content
 		}
 		if chapters[1].Title != "Main Content" {
 			t.Errorf("Expected second chapter title 'Main Content', got %q", chapters[1].Title)
+		}
+	}
+}
+
+func TestImageSequenceDecoder(t *testing.T) {
+	// Create test images using ffmpeg
+	tmpDir := t.TempDir()
+	pattern := filepath.Join(tmpDir, "frame_%04d.png")
+
+	// Generate 5 image frames using ffmpeg
+	cmd := exec.Command("ffmpeg", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=0.2:size=160x120:rate=25",
+		"-frames:v", "5",
+		pattern)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create test images: %v\n%s", err, out)
+	}
+
+	// Verify images were created
+	for i := 1; i <= 5; i++ {
+		imgPath := filepath.Join(tmpDir, "frame_"+padNumber(i, 4)+".png")
+		if _, err := os.Stat(imgPath); err != nil {
+			t.Fatalf("Expected image %s not found: %v", imgPath, err)
+		}
+	}
+
+	// Test image sequence decoder
+	config := ImageSequenceConfig{
+		Pattern:     pattern,
+		StartNumber: 1,
+		FrameRate:   NewRational(25, 1),
+	}
+
+	decoder, err := NewImageSequenceDecoder(config)
+	if err != nil {
+		t.Fatalf("NewImageSequenceDecoder failed: %v", err)
+	}
+	defer decoder.Close()
+
+	// Decode frames
+	frameCount := 0
+	for i := 0; i < 5; i++ {
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			if IsEOF(err) {
+				break
+			}
+			t.Fatalf("DecodeVideo failed: %v", err)
+		}
+		if frame == nil {
+			break
+		}
+		frameCount++
+		t.Logf("Frame %d: %dx%d", frameCount, avutil.GetFrameWidth(frame), avutil.GetFrameHeight(frame))
+	}
+
+	if frameCount == 0 {
+		t.Error("Expected at least one frame to be decoded")
+	}
+	t.Logf("Decoded %d frames from image sequence", frameCount)
+}
+
+func TestImageSequenceEncoder(t *testing.T) {
+	// Create output directory
+	tmpDir := t.TempDir()
+	pattern := filepath.Join(tmpDir, "out_%04d.png")
+
+	// Create test frame data
+	width, height := 160, 120
+
+	// Create encoder for image sequence
+	config := ImageSequenceConfig{
+		Pattern:   pattern,
+		FrameRate: NewRational(25, 1),
+	}
+
+	encoder, err := NewImageSequenceEncoder(config, width, height, PixelFormatRGB24)
+	if err != nil {
+		t.Fatalf("NewImageSequenceEncoder failed: %v", err)
+	}
+	defer encoder.Close()
+
+	// Create and write 3 test frames
+	for i := 0; i < 3; i++ {
+		frame := FrameAlloc()
+		if frame == nil {
+			t.Fatal("Failed to allocate frame")
+		}
+
+		avutil.SetFrameWidth(frame, int32(width))
+		avutil.SetFrameHeight(frame, int32(height))
+		avutil.SetFrameFormat(frame, int32(PixelFormatRGB24))
+
+		if err := avutil.FrameGetBufferErr(frame, 32); err != nil {
+			FrameFree(&frame)
+			t.Fatalf("Failed to allocate frame buffer: %v", err)
+		}
+
+		// Fill frame with color based on frame number
+		fillTestFrameRGB(frame, uint8((i+1)*80), uint8((i+1)*40), uint8((i+1)*20))
+
+		avutil.SetFramePTS(frame, int64(i))
+
+		if err := encoder.WriteVideoFrame(frame); err != nil {
+			FrameFree(&frame)
+			t.Fatalf("WriteVideoFrame failed: %v", err)
+		}
+		FrameFree(&frame)
+	}
+
+	// Close flushes and finalizes the encoder
+	encoder.Close()
+
+	// Verify output images exist
+	for i := 1; i <= 3; i++ {
+		imgPath := filepath.Join(tmpDir, "out_"+padNumber(i, 4)+".png")
+		info, err := os.Stat(imgPath)
+		if err != nil {
+			t.Errorf("Expected output image %s not found: %v", imgPath, err)
+			continue
+		}
+		t.Logf("Output image %d: %s (%d bytes)", i, imgPath, info.Size())
+	}
+}
+
+func padNumber(n, width int) string {
+	format := "%0" + fmt.Sprint(width) + "d"
+	return fmt.Sprintf(format, n)
+}
+
+func fillTestFrameRGB(frame Frame, r, g, b uint8) {
+	width := int(avutil.GetFrameWidth(frame))
+	height := int(avutil.GetFrameHeight(frame))
+	dataPtr := avutil.GetFrameDataPlane(frame, 0)
+	linesize := avutil.GetFrameLinesizePlane(frame, 0)
+
+	if dataPtr == nil || linesize == 0 {
+		return
+	}
+
+	// Create a byte slice from the data pointer
+	// RGB24: 3 bytes per pixel, linesize bytes per row
+	totalSize := int(linesize) * height
+	data := unsafe.Slice((*byte)(dataPtr), totalSize)
+
+	// RGB24: 3 bytes per pixel
+	for y := 0; y < height; y++ {
+		rowOffset := y * int(linesize)
+		for x := 0; x < width; x++ {
+			pixelOffset := rowOffset + x*3
+			if pixelOffset+2 < totalSize {
+				data[pixelOffset] = r
+				data[pixelOffset+1] = g
+				data[pixelOffset+2] = b
+			}
 		}
 	}
 }
