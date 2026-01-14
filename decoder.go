@@ -223,21 +223,27 @@ func (d *Decoder) NumStreams() int {
 	return avformat.GetNumStreams(d.formatCtx)
 }
 
-// Duration returns the duration in microseconds (AV_TIME_BASE units).
-func (d *Decoder) Duration() int64 {
+// Duration returns the duration as time.Duration.
+func (d *Decoder) Duration() time.Duration {
+	us := d.DurationMicroseconds()
+	if us <= 0 {
+		return 0
+	}
+	return time.Duration(us) * time.Microsecond
+}
+
+// DurationMicroseconds returns the duration in microseconds (AV_TIME_BASE units).
+func (d *Decoder) DurationMicroseconds() int64 {
 	if d.formatCtx == nil {
 		return 0
 	}
 	return avformat.GetDuration(d.formatCtx)
 }
 
-// DurationTime returns the duration as time.Duration.
+// DurationTime is an alias for Duration for backward compatibility.
+// Deprecated: Use Duration() instead.
 func (d *Decoder) DurationTime() time.Duration {
-	us := d.Duration()
-	if us <= 0 {
-		return 0
-	}
-	return time.Duration(us) * time.Microsecond
+	return d.Duration()
 }
 
 // BitRate returns the bit rate.
