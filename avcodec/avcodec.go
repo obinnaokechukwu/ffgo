@@ -371,3 +371,138 @@ func GetPacketStreamIndex(pkt Packet) int32 {
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketStreamIndex))
 }
+
+// SetPacketStreamIndex sets the stream index.
+func SetPacketStreamIndex(pkt Packet, idx int32) {
+	if pkt == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(pkt) + offsetPacketStreamIndex)) = idx
+}
+
+// AVCodecContext struct field offsets (for FFmpeg 6.x / avcodec 60.x)
+// Verified with offsetof()
+const (
+	offsetCtxCodecType  = 12  // enum AVMediaType codec_type
+	offsetCtxCodecID    = 24  // enum AVCodecID codec_id
+	offsetCtxBitRate    = 56  // int64_t bit_rate
+	offsetCtxFlags      = 76  // int flags
+	offsetCtxTimeBase   = 100 // AVRational time_base
+	offsetCtxWidth      = 116 // int width
+	offsetCtxHeight     = 120 // int height
+	offsetCtxGopSize    = 132 // int gop_size
+	offsetCtxPixFmt     = 136 // enum AVPixelFormat pix_fmt
+	offsetCtxMaxBFrames = 160 // int max_b_frames
+	offsetCtxFramerate  = 704 // AVRational framerate
+)
+
+// GetCtxWidth returns the width from codec context.
+func GetCtxWidth(ctx Context) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth))
+}
+
+// SetCtxWidth sets the width in codec context.
+func SetCtxWidth(ctx Context, width int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth)) = width
+}
+
+// GetCtxHeight returns the height from codec context.
+func GetCtxHeight(ctx Context) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight))
+}
+
+// SetCtxHeight sets the height in codec context.
+func SetCtxHeight(ctx Context, height int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight)) = height
+}
+
+// GetCtxPixFmt returns the pixel format from codec context.
+func GetCtxPixFmt(ctx Context) int32 {
+	if ctx == nil {
+		return -1
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt))
+}
+
+// SetCtxPixFmt sets the pixel format in codec context.
+func SetCtxPixFmt(ctx Context, fmt int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt)) = fmt
+}
+
+// SetCtxTimeBase sets the time base in codec context.
+func SetCtxTimeBase(ctx Context, num, den int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase)) = num
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4)) = den
+}
+
+// SetCtxGopSize sets the GOP size in codec context.
+func SetCtxGopSize(ctx Context, size int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxGopSize)) = size
+}
+
+// SetCtxMaxBFrames sets the max B-frames in codec context.
+func SetCtxMaxBFrames(ctx Context, max int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxMaxBFrames)) = max
+}
+
+// SetCtxBitRate sets the bit rate in codec context.
+func SetCtxBitRate(ctx Context, bitRate int64) {
+	if ctx == nil {
+		return
+	}
+	*(*int64)(unsafe.Pointer(uintptr(ctx) + offsetCtxBitRate)) = bitRate
+}
+
+// GetCtxFlags returns the flags from codec context.
+func GetCtxFlags(ctx Context) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFlags))
+}
+
+// SetCtxFlags sets the flags in codec context.
+func SetCtxFlags(ctx Context, flags int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFlags)) = flags
+}
+
+// SetCtxFramerate sets the framerate in codec context.
+func SetCtxFramerate(ctx Context, num, den int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate)) = num
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate + 4)) = den
+}
+
+// Codec flag constants
+const (
+	CodecFlagGlobalHeader = 1 << 22 // AV_CODEC_FLAG_GLOBAL_HEADER (4194304)
+)

@@ -7,6 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"unsafe"
+
+	"github.com/obinnaokechukwu/ffgo/avutil"
 )
 
 func init() {
@@ -259,5 +262,242 @@ func TestRational(t *testing.T) {
 	expected := 29.97002997
 	if f < expected-0.0001 || f > expected+0.0001 {
 		t.Errorf("Expected ~%f, got %f", expected, f)
+	}
+}
+
+func TestEncoder(t *testing.T) {
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "output.mp4")
+
+	// Create encoder
+	encoder, err := NewEncoder(outFile, EncoderConfig{
+		Width:       320,
+		Height:      240,
+		PixelFormat: PixelFormatYUV420P,
+		CodecID:     CodecIDH264,
+		BitRate:     1000000,
+		FrameRate:   30,
+		GOPSize:     12,
+		MaxBFrames:  0,
+	})
+	if err != nil {
+		t.Fatalf("NewEncoder failed: %v", err)
+	}
+	defer encoder.Close()
+
+	// Verify encoder properties
+	if encoder.Width() != 320 {
+		t.Errorf("Width: expected 320, got %d", encoder.Width())
+	}
+	if encoder.Height() != 240 {
+		t.Errorf("Height: expected 240, got %d", encoder.Height())
+	}
+	if encoder.PixelFormat() != PixelFormatYUV420P {
+		t.Errorf("PixelFormat: expected %d, got %d", PixelFormatYUV420P, encoder.PixelFormat())
+	}
+
+	t.Logf("Encoder created: %dx%d, format=%d", encoder.Width(), encoder.Height(), encoder.PixelFormat())
+}
+
+func TestEncoderWriteFrames(t *testing.T) {
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "output.mp4")
+
+	// Create encoder
+	encoder, err := NewEncoder(outFile, EncoderConfig{
+		Width:       160,
+		Height:      120,
+		PixelFormat: PixelFormatYUV420P,
+		CodecID:     CodecIDH264,
+		BitRate:     500000,
+		FrameRate:   15,
+		GOPSize:     10,
+	})
+	if err != nil {
+		t.Fatalf("NewEncoder failed: %v", err)
+	}
+
+	// Create a test frame
+	frame := FrameAlloc()
+	if frame == nil {
+		t.Fatal("FrameAlloc returned nil")
+	}
+	defer FrameFree(&frame)
+
+	// Set up frame
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+
+	// Allocate frame buffer
+	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+		t.Fatalf("FrameGetBuffer failed: %v", err)
+	}
+
+	// Write a few frames (solid color frames)
+	numFrames := 15 // Half a second at 30 fps
+	for i := 0; i < numFrames; i++ {
+		// Make frame writable
+		if err := AVUtil.FrameMakeWritable(frame); err != nil {
+			t.Fatalf("FrameMakeWritable failed: %v", err)
+		}
+
+		// Fill Y plane with a gradient
+		fillTestFrame(frame, i, 160, 120)
+
+		if err := encoder.WriteFrame(frame); err != nil {
+			t.Fatalf("WriteFrame failed at frame %d: %v", i, err)
+		}
+	}
+
+	// Close encoder (flushes and writes trailer)
+	if err := encoder.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Verify output file exists
+	info, err := os.Stat(outFile)
+	if err != nil {
+		t.Fatalf("Output file not found: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("Output file is empty")
+	}
+
+	t.Logf("Encoded %d frames to %s (%d bytes)", numFrames, outFile, info.Size())
+
+	// Verify output file can be read
+	decoder, err := NewDecoder(outFile)
+	if err != nil {
+		t.Fatalf("Cannot read output file: %v", err)
+	}
+	defer decoder.Close()
+
+	if !decoder.HasVideo() {
+		t.Error("Output file has no video stream")
+	}
+
+	videoInfo := decoder.VideoStream()
+	if videoInfo.Width != 160 || videoInfo.Height != 120 {
+		t.Errorf("Output dimensions wrong: %dx%d", videoInfo.Width, videoInfo.Height)
+	}
+
+	t.Logf("Output file verified: %dx%d, codec=%s",
+		videoInfo.Width, videoInfo.Height, videoInfo.CodecID.String())
+}
+
+// fillTestFrame fills a YUV420P frame with a test pattern
+func fillTestFrame(frame Frame, frameNum, width, height int) {
+	// Get data pointers using avutil package directly
+	data := avutil.GetFrameData(frame)
+	linesize := avutil.GetFrameLinesize(frame)
+
+	// Y plane
+	if data[0] != nil {
+		yPlane := (*[1 << 24]byte)(unsafe.Pointer(data[0]))
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				// Create a moving gradient
+				val := byte((x + y + frameNum*5) % 256)
+				yPlane[y*int(linesize[0])+x] = val
+			}
+		}
+	}
+
+	// U and V planes (half size for YUV420P)
+	uvHeight := height / 2
+	uvWidth := width / 2
+
+	if data[1] != nil {
+		uPlane := (*[1 << 24]byte)(unsafe.Pointer(data[1]))
+		for y := 0; y < uvHeight; y++ {
+			for x := 0; x < uvWidth; x++ {
+				uPlane[y*int(linesize[1])+x] = 128
+			}
+		}
+	}
+
+	if data[2] != nil {
+		vPlane := (*[1 << 24]byte)(unsafe.Pointer(data[2]))
+		for y := 0; y < uvHeight; y++ {
+			for x := 0; x < uvWidth; x++ {
+				vPlane[y*int(linesize[2])+x] = 128
+			}
+		}
+	}
+}
+
+func TestEncoderWithDecoder(t *testing.T) {
+	// Create a test video
+	inputFile := createTestVideo(t)
+	if inputFile == "" {
+		return
+	}
+
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "transcoded.mp4")
+
+	// Open input
+	decoder, err := NewDecoder(inputFile)
+	if err != nil {
+		t.Fatalf("NewDecoder failed: %v", err)
+	}
+	defer decoder.Close()
+
+	if !decoder.HasVideo() {
+		t.Skip("No video stream in input")
+	}
+
+	videoInfo := decoder.VideoStream()
+
+	// Create encoder with same dimensions
+	encoder, err := NewEncoder(outputFile, EncoderConfig{
+		Width:       videoInfo.Width,
+		Height:      videoInfo.Height,
+		PixelFormat: PixelFormatYUV420P,
+		CodecID:     CodecIDH264,
+		BitRate:     500000,
+		FrameRate:   30,
+		GOPSize:     12,
+	})
+	if err != nil {
+		t.Fatalf("NewEncoder failed: %v", err)
+	}
+
+	// Open decoder
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Fatalf("OpenVideoDecoder failed: %v", err)
+	}
+
+	// Transcode a few frames
+	framesTranscoded := 0
+	for i := 0; i < 10; i++ {
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			if IsEOF(err) {
+				break
+			}
+			t.Fatalf("DecodeVideo failed: %v", err)
+		}
+		if frame == nil {
+			continue
+		}
+
+		if err := encoder.WriteFrame(frame); err != nil {
+			t.Fatalf("WriteFrame failed: %v", err)
+		}
+		framesTranscoded++
+	}
+
+	// Close encoder
+	if err := encoder.Close(); err != nil {
+		t.Fatalf("Encoder close failed: %v", err)
+	}
+
+	t.Logf("Transcoded %d frames from %s to %s", framesTranscoded, inputFile, outputFile)
+
+	// Verify output exists
+	if _, err := os.Stat(outputFile); err != nil {
+		t.Fatalf("Output file not created: %v", err)
 	}
 }
