@@ -42,11 +42,56 @@ type DecoderOptions struct {
 
 	// FFmpeg options passed to avformat_open_input
 	AVOptions map[string]string
+
+	// Streams specifies which stream types to decode (nil = all streams)
+	Streams []MediaType
+
+	// HWDevice specifies the hardware device for hardware acceleration (e.g., "cuda", "vaapi")
+	HWDevice string
+}
+
+// DecoderOption is a functional option for configuring a decoder.
+type DecoderOption func(*DecoderOptions)
+
+// WithFormat sets the format hint for the decoder.
+func WithFormat(format string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.Format = format
+	}
+}
+
+// WithStreams specifies which stream types to decode.
+// Only the specified stream types will be available for decoding.
+func WithStreams(types ...MediaType) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.Streams = types
+	}
+}
+
+// WithHWDevice enables hardware acceleration using the specified device.
+// Common values: "cuda" (NVIDIA), "vaapi" (Linux VA-API), "videotoolbox" (macOS).
+// Note: Hardware acceleration support depends on FFmpeg build and available hardware.
+func WithHWDevice(device string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.HWDevice = device
+	}
+}
+
+// WithAVOptions sets FFmpeg options passed to avformat_open_input.
+func WithAVOptions(options map[string]string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.AVOptions = options
+	}
 }
 
 // NewDecoder opens a media file for decoding.
-func NewDecoder(path string) (*Decoder, error) {
-	return NewDecoderWithOptions(path, nil)
+// Optional functional options can be passed to configure the decoder.
+func NewDecoder(path string, options ...DecoderOption) (*Decoder, error) {
+	opts := &DecoderOptions{}
+	for _, opt := range options {
+		opt(opts)
+	}
+	return NewDecoderWithOptions(path, opts)
 }
 
 // NewDecoderWithOptions opens a media file with custom options.
@@ -118,11 +163,18 @@ func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
 	// Get time base
 	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
 
+	// Get codec name
+	var codecName string
+	if codec := avcodec.FindDecoder(codecID); codec != nil {
+		codecName = avcodec.GetCodecName(codec)
+	}
+
 	info := &StreamInfo{
-		Index:    streamIdx,
-		Type:     codecType,
-		CodecID:  codecID,
-		TimeBase: avutil.NewRational(tbNum, tbDen),
+		Index:     streamIdx,
+		Type:      codecType,
+		CodecID:   codecID,
+		CodecName: codecName,
+		TimeBase:  avutil.NewRational(tbNum, tbDen),
 	}
 
 	if codecType == avutil.MediaTypeVideo {
@@ -535,8 +587,14 @@ func (d *Decoder) FlushDecoder() {
 }
 
 // Seek seeks to a position in the file.
+// The timestamp is specified as time.Duration from the start.
+func (d *Decoder) Seek(ts time.Duration) error {
+	return d.SeekTimestamp(ts.Microseconds())
+}
+
+// SeekTimestamp seeks to a position in the file.
 // timestamp is in AV_TIME_BASE (microseconds).
-func (d *Decoder) Seek(timestamp int64) error {
+func (d *Decoder) SeekTimestamp(timestamp int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -560,9 +618,10 @@ func (d *Decoder) Seek(timestamp int64) error {
 	return nil
 }
 
-// SeekTime seeks to a position in the file using time.Duration.
+// SeekTime is an alias for Seek for backwards compatibility.
+// Deprecated: Use Seek instead.
 func (d *Decoder) SeekTime(dur time.Duration) error {
-	return d.Seek(dur.Microseconds())
+	return d.Seek(dur)
 }
 
 // Close releases all resources.

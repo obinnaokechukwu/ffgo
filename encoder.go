@@ -33,7 +33,8 @@ type Encoder struct {
 	closed        bool
 }
 
-// EncoderConfig configures encoder behavior.
+// EncoderConfig configures encoder behavior (video-only, for compatibility).
+// For new code, consider using EncoderOptions with VideoEncoderConfig.
 type EncoderConfig struct {
 	// Width is the video width in pixels.
 	Width int
@@ -58,6 +59,59 @@ type EncoderConfig struct {
 
 	// MaxBFrames is the maximum number of B-frames (default: 0).
 	MaxBFrames int
+}
+
+// VideoEncoderConfig configures video encoding parameters.
+type VideoEncoderConfig struct {
+	// Codec specifies the video codec (default: CodecIDH264).
+	Codec CodecID
+
+	// Width is the video width in pixels.
+	Width int
+
+	// Height is the video height in pixels.
+	Height int
+
+	// FrameRate is the target frame rate (default: 30/1).
+	FrameRate Rational
+
+	// Bitrate is the target bit rate in bits/second (default: 2000000).
+	Bitrate int64
+
+	// PixelFormat is the pixel format (default: PixelFormatYUV420P).
+	PixelFormat PixelFormat
+
+	// GOPSize is the group of pictures size (default: 12).
+	GOPSize int
+
+	// MaxBFrames is the maximum number of B-frames (default: 0).
+	MaxBFrames int
+}
+
+// AudioEncoderConfig configures audio encoding parameters.
+// Note: Audio encoding is not yet fully implemented.
+type AudioEncoderConfig struct {
+	// Codec specifies the audio codec (default: CodecIDAACj).
+	Codec CodecID
+
+	// SampleRate is the sample rate in Hz (default: 48000).
+	SampleRate int
+
+	// Channels is the number of audio channels (default: 2).
+	Channels int
+
+	// Bitrate is the target bit rate in bits/second (default: 128000).
+	Bitrate int64
+}
+
+// EncoderOptions configures encoder behavior with separate video and audio settings.
+type EncoderOptions struct {
+	// Video contains video encoding settings. Required for video output.
+	Video *VideoEncoderConfig
+
+	// Audio contains audio encoding settings. Optional.
+	// Note: Audio encoding is not yet fully implemented.
+	Audio *AudioEncoderConfig
 }
 
 // NewEncoder creates a new video encoder.
@@ -178,6 +232,45 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 	return e, nil
 }
 
+// NewEncoderWithOptions creates a new encoder with separate video and audio configuration.
+// This is the recommended way to create encoders in new code.
+func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) {
+	if opts == nil || opts.Video == nil {
+		return nil, errors.New("ffgo: EncoderOptions.Video is required")
+	}
+
+	video := opts.Video
+
+	// Convert VideoEncoderConfig to EncoderConfig
+	cfg := EncoderConfig{
+		Width:       video.Width,
+		Height:      video.Height,
+		PixelFormat: video.PixelFormat,
+		CodecID:     video.Codec,
+		BitRate:     video.Bitrate,
+		GOPSize:     video.GOPSize,
+		MaxBFrames:  video.MaxBFrames,
+	}
+
+	// Handle frame rate
+	if video.FrameRate.Den > 0 {
+		cfg.FrameRate = int(video.FrameRate.Num / video.FrameRate.Den)
+	}
+	if cfg.FrameRate <= 0 {
+		cfg.FrameRate = 30
+	}
+
+	// Apply defaults from VideoEncoderConfig if not set in EncoderConfig
+	if cfg.CodecID == CodecIDNone {
+		cfg.CodecID = CodecIDH264
+	}
+	if cfg.BitRate <= 0 {
+		cfg.BitRate = 2000000
+	}
+
+	return NewEncoder(path, cfg)
+}
+
 // WriteHeader writes the file header. Must be called before WriteFrame.
 func (e *Encoder) WriteHeader() error {
 	e.mu.Lock()
@@ -249,6 +342,19 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 			return err
 		}
 	}
+}
+
+// WriteVideoFrame encodes and writes a video frame.
+// This is an alias for WriteFrame for semantic clarity.
+func (e *Encoder) WriteVideoFrame(frame Frame) error {
+	return e.WriteFrame(frame)
+}
+
+// WriteAudioFrame encodes and writes an audio frame.
+// Note: Audio encoding is not yet fully implemented. This function is provided
+// for API compatibility and will return an error if called.
+func (e *Encoder) WriteAudioFrame(frame Frame) error {
+	return errors.New("ffgo: audio encoding not yet implemented")
 }
 
 // Flush flushes the encoder and writes remaining frames.
