@@ -2229,3 +2229,65 @@ func TestGetKeyframes(t *testing.T) {
 		t.Error("Expected at least one keyframe")
 	}
 }
+
+func TestGetChapters(t *testing.T) {
+	// Create a test video with chapters using ffmpeg
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "chapters.mkv")
+
+	// Create a chapter file in FFmetadata format
+	chapterFile := filepath.Join(tmpDir, "chapters.txt")
+	chapterData := `;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=500
+title=Introduction
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=500
+END=1000
+title=Main Content
+`
+	if err := os.WriteFile(chapterFile, []byte(chapterData), 0644); err != nil {
+		t.Fatalf("Failed to write chapter file: %v", err)
+	}
+
+	// Create video with chapters
+	cmd := exec.Command("ffmpeg", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=25",
+		"-i", chapterFile,
+		"-map_metadata", "1",
+		"-c:v", "libx264", "-preset", "ultrafast",
+		testFile)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create test video with chapters: %v\n%s", err, out)
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	chapters := decoder.GetChapters()
+	t.Logf("Found %d chapters", len(chapters))
+
+	for i, ch := range chapters {
+		t.Logf("  Chapter %d: %q (%v - %v)", i, ch.Title, ch.Start, ch.End)
+	}
+
+	if len(chapters) != 2 {
+		t.Errorf("Expected 2 chapters, got %d", len(chapters))
+	}
+
+	if len(chapters) >= 2 {
+		if chapters[0].Title != "Introduction" {
+			t.Errorf("Expected first chapter title 'Introduction', got %q", chapters[0].Title)
+		}
+		if chapters[1].Title != "Main Content" {
+			t.Errorf("Expected second chapter title 'Main Content', got %q", chapters[1].Title)
+		}
+	}
+}
