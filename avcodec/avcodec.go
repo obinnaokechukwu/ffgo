@@ -42,6 +42,7 @@ var (
 	avcodecFlushBuffers      func(ctx unsafe.Pointer)
 	avcodecParametersToCtx   func(ctx, par unsafe.Pointer) int32
 	avcodecParametersFromCtx func(par, ctx unsafe.Pointer) int32
+	avcodecParametersCopy    func(dst, src unsafe.Pointer) int32
 
 	avPacketAlloc func() unsafe.Pointer
 	avPacketFree  func(pkt *unsafe.Pointer)
@@ -84,6 +85,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avcodecFlushBuffers, lib, "avcodec_flush_buffers")
 	purego.RegisterLibFunc(&avcodecParametersToCtx, lib, "avcodec_parameters_to_context")
 	purego.RegisterLibFunc(&avcodecParametersFromCtx, lib, "avcodec_parameters_from_context")
+	purego.RegisterLibFunc(&avcodecParametersCopy, lib, "avcodec_parameters_copy")
 
 	purego.RegisterLibFunc(&avPacketAlloc, lib, "av_packet_alloc")
 	purego.RegisterLibFunc(&avPacketFree, lib, "av_packet_free")
@@ -259,6 +261,40 @@ func ParametersFromContext(par Parameters, ctx Context) error {
 		return avutil.NewError(ret, "avcodec_parameters_from_context")
 	}
 	return nil
+}
+
+// ParametersCopy copies codec parameters from src to dst.
+func ParametersCopy(dst, src Parameters) error {
+	if avcodecParametersCopy == nil {
+		return bindings.ErrNotLoaded
+	}
+	ret := avcodecParametersCopy(dst, src)
+	if ret < 0 {
+		return avutil.NewError(ret, "avcodec_parameters_copy")
+	}
+	return nil
+}
+
+// AVCodecParameters struct field offsets
+const (
+	offsetCodecParTag = 8 // codec_tag at offset 8 (after codec_type and codec_id)
+)
+
+// SetCodecParTag sets the codec tag in codec parameters.
+// Setting to 0 allows the muxer to choose an appropriate tag.
+func SetCodecParTag(par Parameters, tag uint32) {
+	if par == nil {
+		return
+	}
+	*(*uint32)(unsafe.Pointer(uintptr(par) + offsetCodecParTag)) = tag
+}
+
+// GetCodecParTag gets the codec tag from codec parameters.
+func GetCodecParTag(par Parameters) uint32 {
+	if par == nil {
+		return 0
+	}
+	return *(*uint32)(unsafe.Pointer(uintptr(par) + offsetCodecParTag))
 }
 
 // PacketAlloc allocates a packet.
