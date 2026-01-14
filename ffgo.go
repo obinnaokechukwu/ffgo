@@ -60,13 +60,14 @@ type (
 // Re-export common constants
 const (
 	// Pixel formats
-	PixelFormatNone    = avutil.PixelFormatNone
-	PixelFormatYUV420P = avutil.PixelFormatYUV420P
-	PixelFormatRGB24   = avutil.PixelFormatRGB24
-	PixelFormatBGR24   = avutil.PixelFormatBGR24
-	PixelFormatRGBA    = avutil.PixelFormatRGBA
-	PixelFormatBGRA    = avutil.PixelFormatBGRA
-	PixelFormatNV12    = avutil.PixelFormatNV12
+	PixelFormatNone     = avutil.PixelFormatNone
+	PixelFormatYUV420P  = avutil.PixelFormatYUV420P
+	PixelFormatYUVJ420P = avutil.PixelFormatYUVJ420P // Full-range YUV 4:2:0 (JPEG)
+	PixelFormatRGB24    = avutil.PixelFormatRGB24
+	PixelFormatBGR24    = avutil.PixelFormatBGR24
+	PixelFormatRGBA     = avutil.PixelFormatRGBA
+	PixelFormatBGRA     = avutil.PixelFormatBGRA
+	PixelFormatNV12     = avutil.PixelFormatNV12
 
 	// Media types
 	MediaTypeUnknown  = avutil.MediaTypeUnknown

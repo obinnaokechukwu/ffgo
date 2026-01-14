@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avutil"
@@ -2066,5 +2067,165 @@ func TestStreamMetadata(t *testing.T) {
 		}
 	} else {
 		t.Log("No stream metadata found")
+	}
+}
+
+func TestSaveFrame(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	tmpDir := t.TempDir()
+
+	// Test PNG with its own decoder and frame
+	// Note: Don't call FrameFree on frames from DecodeVideo - decoder owns them
+	t.Run("PNG", func(t *testing.T) {
+		decoder, err := NewDecoder(testFile)
+		if err != nil {
+			t.Fatalf("Failed to open file: %v", err)
+		}
+		defer decoder.Close()
+
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			t.Fatalf("Failed to decode frame: %v", err)
+		}
+
+		pngFile := filepath.Join(tmpDir, "test.png")
+		if err := SaveFrame(frame, pngFile); err != nil {
+			t.Fatalf("SaveFrame PNG failed: %v", err)
+		}
+
+		if info, err := os.Stat(pngFile); err != nil {
+			t.Errorf("PNG file not created: %v", err)
+		} else {
+			t.Logf("Created PNG: %s (%d bytes)", pngFile, info.Size())
+		}
+	})
+
+	// Test JPEG with its own decoder and frame
+	t.Run("JPEG", func(t *testing.T) {
+		decoder, err := NewDecoder(testFile)
+		if err != nil {
+			t.Fatalf("Failed to open file: %v", err)
+		}
+		defer decoder.Close()
+
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			t.Fatalf("Failed to decode frame: %v", err)
+		}
+
+		jpgFile := filepath.Join(tmpDir, "test.jpg")
+		if err := SaveFrame(frame, jpgFile); err != nil {
+			t.Fatalf("SaveFrame JPEG failed: %v", err)
+		}
+
+		if info, err := os.Stat(jpgFile); err != nil {
+			t.Errorf("JPEG file not created: %v", err)
+		} else {
+			t.Logf("Created JPEG: %s (%d bytes)", jpgFile, info.Size())
+		}
+	})
+
+	// Test BMP with its own decoder and frame
+	t.Run("BMP", func(t *testing.T) {
+		decoder, err := NewDecoder(testFile)
+		if err != nil {
+			t.Fatalf("Failed to open file: %v", err)
+		}
+		defer decoder.Close()
+
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			t.Fatalf("Failed to decode frame: %v", err)
+		}
+
+		bmpFile := filepath.Join(tmpDir, "test.bmp")
+		if err := SaveFrame(frame, bmpFile); err != nil {
+			t.Fatalf("SaveFrame BMP failed: %v", err)
+		}
+
+		if info, err := os.Stat(bmpFile); err != nil {
+			t.Errorf("BMP file not created: %v", err)
+		} else {
+			t.Logf("Created BMP: %s (%d bytes)", bmpFile, info.Size())
+		}
+	})
+}
+
+func TestExtractFrameFunction(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "extracted.png")
+
+	// Extract frame at 500ms
+	if err := ExtractFrame(testFile, 500*time.Millisecond, outputFile); err != nil {
+		t.Fatalf("ExtractFrame failed: %v", err)
+	}
+
+	// Verify file exists
+	if info, err := os.Stat(outputFile); err != nil {
+		t.Errorf("Output file not created: %v", err)
+	} else {
+		t.Logf("Extracted frame: %s (%d bytes)", outputFile, info.Size())
+	}
+}
+
+func TestGenerateThumbnails(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	tmpDir := t.TempDir()
+	outputPattern := filepath.Join(tmpDir, "thumb_%02d.png")
+
+	// Generate thumbnails every 300ms, max 3
+	filenames, err := GenerateThumbnails(testFile, 300*time.Millisecond, 3, outputPattern)
+	if err != nil {
+		t.Fatalf("GenerateThumbnails failed: %v", err)
+	}
+
+	t.Logf("Generated %d thumbnails", len(filenames))
+	for _, f := range filenames {
+		if info, err := os.Stat(f); err != nil {
+			t.Errorf("Thumbnail not found: %s", f)
+		} else {
+			t.Logf("  %s (%d bytes)", f, info.Size())
+		}
+	}
+}
+
+func TestGetKeyframes(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	keyframes, err := decoder.GetKeyframes()
+	if err != nil {
+		t.Fatalf("GetKeyframes failed: %v", err)
+	}
+
+	t.Logf("Found %d keyframes", len(keyframes))
+	for i, kf := range keyframes {
+		t.Logf("  Keyframe %d: PTS=%d, Time=%v, Pos=%d, Frame=%d", i, kf.PTS, kf.Time, kf.Position, kf.Frame)
+	}
+
+	// Should have at least one keyframe
+	if len(keyframes) == 0 {
+		t.Error("Expected at least one keyframe")
 	}
 }

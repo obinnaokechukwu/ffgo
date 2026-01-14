@@ -429,6 +429,8 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 
 // DecodeVideo reads and decodes the next video frame.
 // This is a convenience method that handles packet reading internally.
+// The returned frame is owned by the decoder; do not call FrameFree on it.
+// If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeVideo() (Frame, error) {
 	if !d.videoDecoderOpen {
@@ -470,6 +472,8 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 
 // DecodeAudio reads and decodes the next audio frame.
 // This is a convenience method that handles packet reading internally.
+// The returned frame is owned by the decoder; do not call FrameFree on it.
+// If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeAudio() (Frame, error) {
 	if !d.audioDecoderOpen {

@@ -50,6 +50,13 @@ const (
 	CodecIDHEVC CodecID = 173 // H.265
 	CodecIDAV1  CodecID = 226
 
+	// Image codecs
+	CodecIDPNG CodecID = 61   // PNG
+	CodecIDBMP CodecID = 66   // BMP
+	CodecIDGIF CodecID = 97   // GIF
+	CodecIDTIFF CodecID = 98  // TIFF
+	CodecIDWEBP CodecID = 224 // WebP
+
 	// Audio codecs (start at 0x10000 in FFmpeg, but we use actual values)
 	CodecIDPCMS16LE CodecID = 65536
 	CodecIDPCMS16BE CodecID = 65537
