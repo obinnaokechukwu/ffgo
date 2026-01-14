@@ -959,6 +959,11 @@ func (e *Encoder) cleanup() {
 
 // guessFormatFromPath determines the output format from filename extension.
 func guessFormatFromPath(path string) string {
+	// Check for image sequence pattern (contains %d, %04d, etc.)
+	if isImageSequencePattern(path) {
+		return "image2"
+	}
+
 	// Get extension
 	ext := ""
 	for i := len(path) - 1; i >= 0; i-- {
@@ -993,7 +998,33 @@ func guessFormatFromPath(path string) string {
 		return "ogg"
 	case "gif":
 		return "gif"
+	case "png", "PNG":
+		return "image2"
+	case "jpg", "jpeg", "JPG", "JPEG":
+		return "image2"
+	case "bmp", "BMP":
+		return "image2"
 	default:
 		return ""
 	}
+}
+
+// isImageSequencePattern checks if path contains printf-style format specifiers
+// like %d, %04d, etc. that indicate an image sequence pattern.
+func isImageSequencePattern(path string) bool {
+	for i := 0; i < len(path)-1; i++ {
+		if path[i] == '%' {
+			// Check if followed by digits and 'd'
+			j := i + 1
+			// Skip width specifier (e.g., "04" in "%04d")
+			for j < len(path) && path[j] >= '0' && path[j] <= '9' {
+				j++
+			}
+			// Must end with 'd'
+			if j < len(path) && path[j] == 'd' {
+				return true
+			}
+		}
+	}
+	return false
 }

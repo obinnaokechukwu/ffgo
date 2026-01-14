@@ -76,15 +76,19 @@ const (
 	MediaTypeSubtitle = avutil.MediaTypeSubtitle
 
 	// Common codec IDs
-	CodecIDNone = avcodec.CodecIDNone
-	CodecIDH264 = avcodec.CodecIDH264
-	CodecIDHEVC = avcodec.CodecIDHEVC
-	CodecIDAV1  = avcodec.CodecIDAV1
-	CodecIDVP8  = avcodec.CodecIDVP8
-	CodecIDVP9  = avcodec.CodecIDVP9
-	CodecIDAAC  = avcodec.CodecIDAAC
-	CodecIDMP3  = avcodec.CodecIDMP3
-	CodecIDOPUS = avcodec.CodecIDOPUS
+	CodecIDNone  = avcodec.CodecIDNone
+	CodecIDH264  = avcodec.CodecIDH264
+	CodecIDHEVC  = avcodec.CodecIDHEVC
+	CodecIDAV1   = avcodec.CodecIDAV1
+	CodecIDVP8   = avcodec.CodecIDVP8
+	CodecIDVP9   = avcodec.CodecIDVP9
+	CodecIDAAC   = avcodec.CodecIDAAC
+	CodecIDMP3   = avcodec.CodecIDMP3
+	CodecIDOPUS  = avcodec.CodecIDOPUS
+	CodecIDMJPEG = avcodec.CodecIDMJPEG
+	CodecIDPNG   = avcodec.CodecIDPNG
+	CodecIDBMP   = avcodec.CodecIDBMP
+	CodecIDGIF   = avcodec.CodecIDGIF
 
 	// Codec aliases (shorter names for convenience, as shown in user-guide)
 	CodecH264 = CodecIDH264
