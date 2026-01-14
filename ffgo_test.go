@@ -960,3 +960,180 @@ func TestChannelLayoutNumChannels(t *testing.T) {
 		})
 	}
 }
+
+// FilterGraph tests
+
+func TestNewVideoFilterGraph(t *testing.T) {
+	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatalf("NewVideoFilterGraph failed: %v", err)
+	}
+	defer graph.Close()
+
+	if !graph.IsVideo() {
+		t.Error("expected IsVideo() to be true")
+	}
+	if graph.IsAudio() {
+		t.Error("expected IsAudio() to be false")
+	}
+
+	t.Log("NewVideoFilterGraph with null filter succeeded")
+}
+
+func TestVideoFilterGraphWithScale(t *testing.T) {
+	// Create a filter graph that scales 640x480 to 320x240
+	graph, err := NewVideoFilterGraph("scale=320:240", 640, 480, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatalf("NewVideoFilterGraph failed: %v", err)
+	}
+	defer graph.Close()
+
+	t.Log("NewVideoFilterGraph with scale filter succeeded")
+}
+
+func TestVideoFilterGraphWithChain(t *testing.T) {
+	// Test multiple filters in a chain
+	graph, err := NewVideoFilterGraph("scale=320:240,format=yuv420p", 640, 480, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatalf("NewVideoFilterGraph failed: %v", err)
+	}
+	defer graph.Close()
+
+	t.Log("NewVideoFilterGraph with filter chain succeeded")
+}
+
+func TestFilterGraphValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     FilterGraphConfig
+		wantErr bool
+	}{
+		{
+			name:    "empty config",
+			cfg:     FilterGraphConfig{},
+			wantErr: true, // no video or audio params
+		},
+		{
+			name: "video only",
+			cfg: FilterGraphConfig{
+				Width:    320,
+				Height:   240,
+				PixelFmt: PixelFormatYUV420P,
+				Filters:  "null",
+			},
+			wantErr: false,
+		},
+		{
+			name: "audio only",
+			cfg: FilterGraphConfig{
+				SampleRate: 44100,
+				Channels:   2,
+				SampleFmt:  SampleFormatFLTP,
+				Filters:    "anull",
+			},
+			wantErr: false,
+		},
+		{
+			name: "mixed video and audio",
+			cfg: FilterGraphConfig{
+				Width:      320,
+				Height:     240,
+				PixelFmt:   PixelFormatYUV420P,
+				SampleRate: 44100,
+				Channels:   2,
+				Filters:    "null",
+			},
+			wantErr: true, // cannot mix
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			graph, err := NewFilterGraph(tt.cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					if graph != nil {
+						graph.Close()
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				} else {
+					graph.Close()
+				}
+			}
+		})
+	}
+}
+
+func TestFilterGraphClose(t *testing.T) {
+	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatalf("NewVideoFilterGraph failed: %v", err)
+	}
+
+	// Close should succeed
+	if err := graph.Close(); err != nil {
+		t.Errorf("Close() failed: %v", err)
+	}
+
+	// Second close should be no-op
+	if err := graph.Close(); err != nil {
+		t.Errorf("second Close() failed: %v", err)
+	}
+
+	// Operations on closed graph should fail
+	_, err = graph.Filter(nil)
+	if err != ErrFilterGraphClosed {
+		t.Errorf("Filter() on closed graph: got %v, want ErrFilterGraphClosed", err)
+	}
+
+	_, err = graph.Flush()
+	if err != ErrFilterGraphClosed {
+		t.Errorf("Flush() on closed graph: got %v, want ErrFilterGraphClosed", err)
+	}
+}
+
+func TestAudioFilterGraphBasic(t *testing.T) {
+	cfg := FilterGraphConfig{
+		SampleRate: 48000,
+		Channels:   2,
+		SampleFmt:  SampleFormatS16,
+		Filters:    "anull", // pass-through filter
+	}
+
+	graph, err := NewFilterGraph(cfg)
+	if err != nil {
+		t.Fatalf("NewFilterGraph failed: %v", err)
+	}
+	defer graph.Close()
+
+	if graph.IsVideo() {
+		t.Error("expected IsVideo() to be false")
+	}
+	if !graph.IsAudio() {
+		t.Error("expected IsAudio() to be true")
+	}
+
+	t.Log("Audio filter graph with anull filter succeeded")
+}
+
+func TestAudioFilterGraphVolume(t *testing.T) {
+	// Test volume filter
+	cfg := FilterGraphConfig{
+		SampleRate: 44100,
+		Channels:   2,
+		SampleFmt:  SampleFormatFLTP,
+		Filters:    "volume=0.5", // reduce volume by half
+	}
+
+	graph, err := NewFilterGraph(cfg)
+	if err != nil {
+		t.Fatalf("NewFilterGraph with volume filter failed: %v", err)
+	}
+	defer graph.Close()
+
+	t.Log("Audio filter graph with volume filter succeeded")
+}
