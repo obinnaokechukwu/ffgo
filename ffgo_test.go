@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -499,5 +500,159 @@ func TestEncoderWithDecoder(t *testing.T) {
 	// Verify output exists
 	if _, err := os.Stat(outputFile); err != nil {
 		t.Fatalf("Output file not created: %v", err)
+	}
+}
+
+func TestDecoderFromReader(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Open file as io.Reader
+	file, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Create decoder from reader
+	decoder, err := NewDecoderFromReader(file, "")
+	if err != nil {
+		t.Fatalf("NewDecoderFromReader failed: %v", err)
+	}
+	defer decoder.Close()
+
+	// Check stream info
+	if !decoder.HasVideo() {
+		t.Error("Expected video stream")
+	}
+
+	videoInfo := decoder.VideoStream()
+	if videoInfo == nil {
+		t.Fatal("VideoStream returned nil")
+	}
+
+	t.Logf("Video from reader: %dx%d, codec=%s",
+		videoInfo.Width, videoInfo.Height, videoInfo.CodecID.String())
+
+	if videoInfo.Width != 320 || videoInfo.Height != 240 {
+		t.Errorf("Expected 320x240, got %dx%d", videoInfo.Width, videoInfo.Height)
+	}
+}
+
+func TestDecoderFromReaderWithDecode(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Open file as io.Reader
+	file, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Create decoder from reader
+	decoder, err := NewDecoderFromReader(file, "")
+	if err != nil {
+		t.Fatalf("NewDecoderFromReader failed: %v", err)
+	}
+	defer decoder.Close()
+
+	// Open video decoder
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Fatalf("OpenVideoDecoder failed: %v", err)
+	}
+
+	// Decode a few frames
+	frameCount := 0
+	for i := 0; i < 5; i++ {
+		frame, err := decoder.DecodeVideo()
+		if err != nil {
+			if IsEOF(err) {
+				break
+			}
+			t.Fatalf("DecodeVideo failed: %v", err)
+		}
+		if frame != nil {
+			frameCount++
+		}
+	}
+
+	if frameCount == 0 {
+		t.Error("No frames decoded from reader")
+	}
+	t.Logf("Decoded %d frames from io.Reader", frameCount)
+}
+
+func TestDecoderFromIOCallbacks(t *testing.T) {
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	// Open file manually
+	file, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Track stats
+	totalBytesRead := int64(0)
+	readCalls := 0
+
+	// Create custom callbacks
+	callbacks := &IOCallbacks{
+		Read: func(buf []byte) (int, error) {
+			n, err := file.Read(buf)
+			if n > 0 {
+				totalBytesRead += int64(n)
+				readCalls++
+			}
+			if err == io.EOF {
+				return n, io.EOF
+			}
+			return n, err
+		},
+		Seek: func(offset int64, whence int) (int64, error) {
+			return file.Seek(offset, whence)
+		},
+	}
+
+	// Create decoder with custom callbacks
+	decoder, err := NewDecoderFromIO(callbacks, "")
+	if err != nil {
+		t.Fatalf("NewDecoderFromIO failed: %v", err)
+	}
+	defer decoder.Close()
+
+	// Check we can read stream info
+	if !decoder.HasVideo() {
+		t.Error("Expected video stream")
+	}
+
+	// Open and decode a frame
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Fatalf("OpenVideoDecoder failed: %v", err)
+	}
+
+	frame, err := decoder.DecodeVideo()
+	if err != nil && !IsEOF(err) {
+		t.Fatalf("DecodeVideo failed: %v", err)
+	}
+	if frame == nil {
+		t.Error("Expected a decoded frame")
+	}
+
+	t.Logf("Custom I/O stats: bytes_read=%d, read_calls=%d", totalBytesRead, readCalls)
+
+	if totalBytesRead == 0 {
+		t.Error("No bytes read through custom I/O")
+	}
+	if readCalls == 0 {
+		t.Error("Read callback was never called")
 	}
 }

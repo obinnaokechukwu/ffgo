@@ -84,7 +84,7 @@ func main() {
 	// Create scaler if pixel format conversion is needed
 	var scaler *ffgo.Scaler
 	if videoInfo.PixelFmt != ffgo.PixelFormatYUV420P {
-		fmt.Printf("Creating scaler: %s -> YUV420P\n", videoInfo.PixelFmt)
+		fmt.Printf("Creating scaler: %v -> YUV420P\n", videoInfo.PixelFmt)
 		scaler, err = ffgo.NewScaler(ffgo.ScalerConfig{
 			SrcWidth:  videoInfo.Width,
 			SrcHeight: videoInfo.Height,
