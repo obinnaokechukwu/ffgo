@@ -49,6 +49,10 @@ var (
 	avPacketRef   func(dst, src unsafe.Pointer) int32
 	avPacketUnref func(pkt unsafe.Pointer)
 
+	// Subtitle decoding
+	avcodecDecodeSubtitle2 func(ctx, sub, gotSubPtr, pkt unsafe.Pointer) int32
+	avsubtitleFree         func(sub unsafe.Pointer)
+
 	bindingsRegistered bool
 )
 
@@ -91,6 +95,10 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avPacketFree, lib, "av_packet_free")
 	purego.RegisterLibFunc(&avPacketRef, lib, "av_packet_ref")
 	purego.RegisterLibFunc(&avPacketUnref, lib, "av_packet_unref")
+
+	// Subtitle decoding
+	purego.RegisterLibFunc(&avcodecDecodeSubtitle2, lib, "avcodec_decode_subtitle2")
+	purego.RegisterLibFunc(&avsubtitleFree, lib, "avsubtitle_free")
 
 	bindingsRegistered = true
 }
@@ -755,6 +763,28 @@ func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) {
 	// Create a new reference to the buffer
 	ref := avutil.NewBufferRef(hwDeviceCtx)
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx)) = ref
+}
+
+// DecodeSubtitle2 decodes a subtitle from a packet.
+// Returns true if a subtitle was decoded, along with any error.
+func DecodeSubtitle2(ctx Context, sub, pkt unsafe.Pointer) (bool, error) {
+	if avcodecDecodeSubtitle2 == nil {
+		return false, bindings.ErrNotLoaded
+	}
+	var gotSub int32
+	ret := avcodecDecodeSubtitle2(ctx, sub, unsafe.Pointer(&gotSub), pkt)
+	if ret < 0 {
+		return false, avutil.NewError(ret, "avcodec_decode_subtitle2")
+	}
+	return gotSub != 0, nil
+}
+
+// SubtitleFree frees subtitle resources.
+func SubtitleFree(sub unsafe.Pointer) {
+	if avsubtitleFree == nil || sub == nil {
+		return
+	}
+	avsubtitleFree(sub)
 }
 
 // GetCtxHWFramesCtx returns the hardware frames context from codec context.

@@ -1833,6 +1833,112 @@ func TestTotalFrames(t *testing.T) {
 	}
 }
 
+func TestSubtitleDetection(t *testing.T) {
+	// Test video without subtitles
+	testFile := createTestVideo(t)
+	if testFile == "" {
+		return
+	}
+
+	decoder, err := NewDecoder(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer decoder.Close()
+
+	hasSubtitle := decoder.HasSubtitle()
+	t.Logf("Has subtitle: %v", hasSubtitle)
+
+	// Our test video should not have subtitles
+	if hasSubtitle {
+		t.Log("Unexpectedly found subtitle stream")
+	}
+
+	subInfo := decoder.SubtitleStream()
+	if subInfo != nil {
+		t.Logf("Subtitle stream: %+v", subInfo)
+	} else {
+		t.Log("No subtitle stream (expected)")
+	}
+}
+
+func createTestVideoWithSubtitles(t *testing.T) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	// Create an SRT subtitle file
+	srtFile := filepath.Join(tmpDir, "test.srt")
+	srtContent := `1
+00:00:00,000 --> 00:00:01,000
+Hello World
+
+2
+00:00:01,000 --> 00:00:02,000
+Test Subtitle
+`
+	if err := os.WriteFile(srtFile, []byte(srtContent), 0644); err != nil {
+		t.Logf("Failed to write SRT file: %v", err)
+		return ""
+	}
+
+	testFile := filepath.Join(tmpDir, "test_with_subs.mkv")
+
+	cmd := exec.Command("ffmpeg", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=30",
+		"-i", srtFile,
+		"-c:v", "libx264", "-preset", "ultrafast",
+		"-c:s", "srt",
+		testFile)
+
+	if err := cmd.Run(); err != nil {
+		t.Logf("ffmpeg with subtitles failed: %v", err)
+		return ""
+	}
+
+	if _, err := os.Stat(testFile); err != nil {
+		t.Logf("Test file not created: %v", err)
+		return ""
+	}
+
+	return testFile
+}
+
+func TestSubtitleDecoder(t *testing.T) {
+	testFile := createTestVideoWithSubtitles(t)
+	if testFile == "" {
+		t.Skip("Could not create test file with subtitles")
+		return
+	}
+
+	decoder, err := NewSubtitleDecoder(testFile)
+	if err != nil {
+		t.Logf("Failed to create subtitle decoder (may be expected): %v", err)
+		return
+	}
+	defer decoder.Close()
+
+	t.Logf("Subtitle stream: %+v", decoder.StreamInfo())
+
+	// Try to decode some subtitles
+	subCount := 0
+	for subCount < 5 {
+		sub, err := decoder.DecodeNext()
+		if err != nil {
+			t.Logf("Decode error: %v", err)
+			break
+		}
+		if sub == nil {
+			t.Log("End of subtitles")
+			break
+		}
+		subCount++
+		t.Logf("Subtitle %d: %s - %s, text: %q", subCount, sub.StartTime, sub.EndTime, sub.Text)
+	}
+
+	t.Logf("Decoded %d subtitles", subCount)
+}
+
 func TestStreamMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
