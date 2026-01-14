@@ -152,6 +152,9 @@ func FrameMakeWritable(frame Frame) error {
 // NoPTSValue is the value used to indicate no PTS.
 const NoPTSValue int64 = -9223372036854775808 // 0x8000000000000000
 
+// AV_NOPTS_VALUE is an alias for NoPTSValue (matches FFmpeg naming).
+const AV_NOPTS_VALUE = NoPTSValue
+
 // AVFrame struct field offsets (for FFmpeg 6.x / avutil 58.x)
 // These are used to read/write frame properties without accessing struct fields directly
 // Verified with offsetof() on FFmpeg 58.29.100

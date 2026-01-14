@@ -94,6 +94,22 @@ const (
 	CodecAAC  = CodecIDAAC
 	CodecMP3  = CodecIDMP3
 	CodecOpus = CodecIDOPUS
+
+	// Sample formats
+	SampleFormatNone = avutil.SampleFormatNone
+	SampleFormatU8   = avutil.SampleFormatU8
+	SampleFormatS16  = avutil.SampleFormatS16
+	SampleFormatS32  = avutil.SampleFormatS32
+	SampleFormatFlt  = avutil.SampleFormatFlt
+	SampleFormatDbl  = avutil.SampleFormatDbl
+	SampleFormatU8P  = avutil.SampleFormatU8P
+	SampleFormatS16P = avutil.SampleFormatS16P
+	SampleFormatS32P = avutil.SampleFormatS32P
+	SampleFormatFLTP = avutil.SampleFormatFltP // Float 32-bit planar (AAC default)
+	SampleFormatFltP = avutil.SampleFormatFltP // Alias
+	SampleFormatDblP = avutil.SampleFormatDblP
+	SampleFormatS64  = avutil.SampleFormatS64
+	SampleFormatS64P = avutil.SampleFormatS64P
 )
 
 // StreamInfo contains information about a media stream.

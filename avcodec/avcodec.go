@@ -390,9 +390,13 @@ const (
 	offsetCtxTimeBase   = 100 // AVRational time_base
 	offsetCtxWidth      = 116 // int width
 	offsetCtxHeight     = 120 // int height
+	offsetCtxSampleRate = 124 // int sample_rate
 	offsetCtxGopSize    = 132 // int gop_size
 	offsetCtxPixFmt     = 136 // enum AVPixelFormat pix_fmt
+	offsetCtxSampleFmt  = 140 // enum AVSampleFormat sample_fmt
+	offsetCtxFrameSize  = 144 // int frame_size
 	offsetCtxMaxBFrames = 160 // int max_b_frames
+	offsetCtxChannels   = 492 // int channels (deprecated, but still accessible)
 	offsetCtxFramerate  = 704 // AVRational framerate
 )
 
@@ -506,3 +510,136 @@ func SetCtxFramerate(ctx Context, num, den int32) {
 const (
 	CodecFlagGlobalHeader = 1 << 22 // AV_CODEC_FLAG_GLOBAL_HEADER (4194304)
 )
+
+// Audio codec context accessors
+
+// GetCtxSampleRate returns the sample rate from codec context.
+func GetCtxSampleRate(ctx Context) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleRate))
+}
+
+// SetCtxSampleRate sets the sample rate in codec context.
+func SetCtxSampleRate(ctx Context, sampleRate int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleRate)) = sampleRate
+}
+
+// GetCtxChannels returns the number of channels from codec context.
+func GetCtxChannels(ctx Context) int32 {
+	if ctx == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChannels))
+}
+
+// SetCtxChannels sets the number of channels in codec context.
+// Note: This sets the deprecated 'channels' field. For FFmpeg 5.1+, prefer ch_layout.
+func SetCtxChannels(ctx Context, channels int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChannels)) = channels
+}
+
+// GetCtxSampleFmt returns the sample format from codec context.
+func GetCtxSampleFmt(ctx Context) int32 {
+	if ctx == nil {
+		return -1
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt))
+}
+
+// SetCtxSampleFmt sets the sample format in codec context.
+func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
+	if ctx == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt)) = sampleFmt
+}
+
+// GetCtxFrameSize returns the frame size from codec context.
+// For audio, this is the number of samples per frame.
+func GetCtxFrameSize(ctx Context) int {
+	if ctx == nil {
+		return 0
+	}
+	return int(*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFrameSize)))
+}
+
+// GetCtxTimeBase returns the time base from codec context.
+func GetCtxTimeBase(ctx Context) avutil.Rational {
+	if ctx == nil {
+		return avutil.Rational{}
+	}
+	num := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase))
+	den := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4))
+	return avutil.NewRational(num, den)
+}
+
+// SetPacketPTS sets the presentation timestamp.
+func SetPacketPTS(pkt Packet, pts int64) {
+	if pkt == nil {
+		return
+	}
+	*(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketPts)) = pts
+}
+
+// SetPacketDTS sets the decompression timestamp.
+func SetPacketDTS(pkt Packet, dts int64) {
+	if pkt == nil {
+		return
+	}
+	*(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketDts)) = dts
+}
+
+// RescalePacketTS rescales packet timestamps from one time base to another.
+// This is equivalent to FFmpeg's av_packet_rescale_ts().
+func RescalePacketTS(pkt Packet, srcTb, dstTb avutil.Rational) {
+	if pkt == nil {
+		return
+	}
+
+	pts := GetPacketPTS(pkt)
+	dts := GetPacketDTS(pkt)
+
+	// Rescale PTS if valid
+	if pts != avutil.AV_NOPTS_VALUE {
+		pts = rescaleQ(pts, srcTb, dstTb)
+		SetPacketPTS(pkt, pts)
+	}
+
+	// Rescale DTS if valid
+	if dts != avutil.AV_NOPTS_VALUE {
+		dts = rescaleQ(dts, srcTb, dstTb)
+		SetPacketDTS(pkt, dts)
+	}
+
+	// TODO: Also rescale duration if needed
+}
+
+// rescaleQ rescales a value from one time base to another.
+// Equivalent to av_rescale_q: return a * bq / cq
+func rescaleQ(a int64, bq, cq avutil.Rational) int64 {
+	// a * bq.Num / bq.Den * cq.Den / cq.Num
+	// = a * bq.Num * cq.Den / (bq.Den * cq.Num)
+	if bq.Den == 0 || cq.Num == 0 {
+		return 0
+	}
+	// Use 128-bit arithmetic emulation to avoid overflow
+	// Simplified: a * b / c where b = bq.Num * cq.Den, c = bq.Den * cq.Num
+	b := int64(bq.Num) * int64(cq.Den)
+	c := int64(bq.Den) * int64(cq.Num)
+	if c == 0 {
+		return 0
+	}
+	// Rounding: add c/2 for positive values
+	if a >= 0 {
+		return (a*b + c/2) / c
+	}
+	return (a*b - c/2) / c
+}
