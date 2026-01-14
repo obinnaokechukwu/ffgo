@@ -424,13 +424,14 @@ func SetIOContext(ctx FormatContext, pb IOContext) {
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetIOContext)) = pb
 }
 
-// AVStream struct field offsets (for FFmpeg 6.x / avformat 60.x)
-// Verified with offsetof() on FFmpeg 60.16.100
+// AVStream struct field offsets (for FFmpeg 6.x/7.x)
+// Verified with offsetof() on FFmpeg 7.1.1
 const (
-	offsetStreamIndex    = 8  // int index
-	offsetStreamID       = 12 // int id
-	offsetStreamCodecPar = 16 // AVCodecParameters *codecpar
-	offsetStreamTimeBase = 32 // AVRational time_base
+	offsetStreamIndex        = 8  // int index
+	offsetStreamID           = 12 // int id
+	offsetStreamCodecPar     = 16 // AVCodecParameters *codecpar
+	offsetStreamTimeBase     = 32 // AVRational time_base
+	offsetStreamAvgFrameRate = 88 // AVRational avg_frame_rate
 )
 
 // GetStreamIndex returns the stream index.
@@ -449,8 +450,8 @@ func GetStreamCodecPar(stream Stream) avcodec.Parameters {
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(stream) + offsetStreamCodecPar))
 }
 
-// AVCodecParameters struct field offsets (for FFmpeg 6.x / avcodec 60.x)
-// Verified with offsetof() on FFmpeg 60.x
+// AVCodecParameters struct field offsets (for FFmpeg 6.x/7.x)
+// Verified with offsetof() on FFmpeg 7.1.1
 const (
 	offsetCodecParType       = 0   // enum AVMediaType codec_type
 	offsetCodecParCodecID    = 4   // enum AVCodecID codec_id
@@ -458,6 +459,7 @@ const (
 	offsetCodecParWidth      = 56  // int width
 	offsetCodecParHeight     = 60  // int height
 	offsetCodecParSampleRate = 116 // int sample_rate
+	offsetCodecParChannels   = 148 // ch_layout.nb_channels (int in AVChannelLayout at offset 136 + 12)
 )
 
 // GetCodecParType returns the media type from codec parameters.
@@ -506,6 +508,24 @@ func GetCodecParSampleRate(par avcodec.Parameters) int32 {
 		return 0
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParSampleRate))
+}
+
+// GetCodecParChannels returns the number of audio channels.
+func GetCodecParChannels(par avcodec.Parameters) int32 {
+	if par == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChannels))
+}
+
+// GetStreamAvgFrameRate returns the average frame rate (num/den).
+func GetStreamAvgFrameRate(stream Stream) (num, den int32) {
+	if stream == nil {
+		return 0, 1
+	}
+	num = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamAvgFrameRate))
+	den = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamAvgFrameRate + 4))
+	return
 }
 
 // AVFormatContext output field offsets (for FFmpeg 6.x)

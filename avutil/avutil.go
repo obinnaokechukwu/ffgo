@@ -148,6 +148,9 @@ func FrameMakeWritable(frame Frame) error {
 	return nil
 }
 
+// NoPTSValue is the value used to indicate no PTS.
+const NoPTSValue int64 = -9223372036854775808 // 0x8000000000000000
+
 // AVFrame struct field offsets (for FFmpeg 6.x / avutil 58.x)
 // These are used to read/write frame properties without accessing struct fields directly
 // Verified with offsetof() on FFmpeg 58.29.100
@@ -159,12 +162,19 @@ const (
 	offsetLinesize = 64 // int linesize[8] at offset 64
 
 	// Video frame fields
-	offsetWidth  = 104 // int width at offset 104
-	offsetHeight = 108 // int height at offset 108
-	offsetFormat = 116 // int format at offset 116
+	offsetWidth     = 104 // int width at offset 104
+	offsetHeight    = 108 // int height at offset 108
+	offsetNbSamples = 112 // int nb_samples at offset 112
+	offsetFormat    = 116 // int format at offset 116
+
+	// Key frame flag
+	offsetKeyFrame = 120 // int key_frame at offset 120
 
 	// Timing fields
 	offsetPts = 136 // int64 pts at offset 136
+
+	// Audio fields
+	offsetSampleRate = 216 // int sample_rate at offset 216 (FFmpeg 6.x)
 )
 
 // GetFrameWidth returns the width of the frame.
@@ -218,7 +228,7 @@ func SetFrameFormat(frame Frame, format int32) {
 // GetFramePTS returns the presentation timestamp.
 func GetFramePTS(frame Frame) int64 {
 	if frame == nil {
-		return 0
+		return NoPTSValue
 	}
 	return *(*int64)(unsafe.Pointer(uintptr(frame) + offsetPts))
 }
@@ -229,6 +239,46 @@ func SetFramePTS(frame Frame, pts int64) {
 		return
 	}
 	*(*int64)(unsafe.Pointer(uintptr(frame) + offsetPts)) = pts
+}
+
+// GetFrameNbSamples returns the number of audio samples in this frame.
+func GetFrameNbSamples(frame Frame) int32 {
+	if frame == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetNbSamples))
+}
+
+// SetFrameNbSamples sets the number of audio samples.
+func SetFrameNbSamples(frame Frame, nbSamples int32) {
+	if frame == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetNbSamples)) = nbSamples
+}
+
+// GetFrameSampleRate returns the audio sample rate.
+func GetFrameSampleRate(frame Frame) int32 {
+	if frame == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetSampleRate))
+}
+
+// SetFrameSampleRate sets the audio sample rate.
+func SetFrameSampleRate(frame Frame, sampleRate int32) {
+	if frame == nil {
+		return
+	}
+	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetSampleRate)) = sampleRate
+}
+
+// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.
+func GetFrameKeyFrame(frame Frame) int32 {
+	if frame == nil {
+		return 0
+	}
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetKeyFrame))
 }
 
 // GetFrameLinesizePlane returns the linesize for a given plane.

@@ -1,11 +1,20 @@
 # Claude Memory - ffgo Project
 
 ## Current Focus
-The ffgo library implementation is complete. All core functionality is working:
-- CGO_ENABLED=0 builds work
-- All tests pass
-- Decoder, Encoder, and Scaler all work
-- Example applications (decode, encode) work
+Continuing ffgo library implementation. Recently added:
+- FrameWrapper with PTS(), Data(), MediaType(), Width(), Height() methods
+- StreamInfo now has FrameRate and Channels fields
+- Decoder.ReadFrame() returns FrameWrapper with MediaType
+- Decoder.DurationTime(), SeekTime() for time.Duration support
+- Audio decoder support (OpenAudioDecoder, DecodeAudio)
+- Logging system with SetLogLevel(), SetLogCallback()
+- internal/shim package for shim library loading
+- transcode example
+
+Still need to implement:
+- Custom I/O (IOCallbacks, NewDecoderFromIO, NewDecoderFromReader)
+- NewEncoderToWriter
+- custom-io example
 
 ## Project Facts
 - **Module path**: github.com/nonibytes/ffgo
@@ -14,12 +23,12 @@ The ffgo library implementation is complete. All core functionality is working:
 - **FFmpeg versions supported**: 4.x - 7.x (tested with 6.x)
 - **Platforms**: Linux/macOS/Windows on amd64/arm64 (no iOS/Android)
 
-### Struct Offsets (FFmpeg 6.x / avutil 58.x)
+### Struct Offsets (FFmpeg 7.x / avutil 59.x)
 These were verified using offsetof():
-- **AVFrame**: data=0, linesize=64, width=104, height=108, format=116, pts=136
+- **AVFrame**: data=0, linesize=64, width=104, height=108, nb_samples=112, format=116, key_frame=120, pts=136, sample_rate=216
 - **AVFormatContext**: pb=32, oformat=16, nb_streams=44, streams=48, duration=72, bit_rate=80
-- **AVStream**: index=8, id=12, codecpar=16, time_base=32
-- **AVCodecParameters**: codec_type=0, codec_id=4, format=28, width=56, height=60, sample_rate=116
+- **AVStream**: index=8, id=12, codecpar=16, time_base=32, avg_frame_rate=88
+- **AVCodecParameters**: codec_type=0, codec_id=4, format=28, width=56, height=60, sample_rate=116, channels=148 (ch_layout.nb_channels)
 - **AVPacket**: pts=8, dts=16, data=24, size=32, stream_index=36
 - **AVCodecContext**: codec_type=12, codec_id=24, bit_rate=56, flags=76, time_base=100, width=116, height=120, gop_size=132, pix_fmt=136, max_b_frames=160, framerate=704
 - **AVOutputFormat**: flags=44
