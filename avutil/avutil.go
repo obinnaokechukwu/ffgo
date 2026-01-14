@@ -18,6 +18,15 @@ type Frame = unsafe.Pointer
 // Dictionary is an opaque FFmpeg AVDictionary pointer.
 type Dictionary = unsafe.Pointer
 
+// AVBufferRef is an opaque FFmpeg AVBufferRef pointer.
+type AVBufferRef = unsafe.Pointer
+
+// HWDeviceContext is an opaque FFmpeg AVBufferRef for hardware device context.
+type HWDeviceContext = unsafe.Pointer
+
+// HWFramesContext is an opaque FFmpeg AVBufferRef for hardware frames context.
+type HWFramesContext = unsafe.Pointer
+
 // Function bindings - registered when init() is called
 var (
 	avFrameAlloc        func() unsafe.Pointer
@@ -45,6 +54,16 @@ var (
 	avOptSet       func(obj unsafe.Pointer, name, val string, searchFlags int32) int32
 	avOptSetInt    func(obj unsafe.Pointer, name string, val int64, searchFlags int32) int32
 	avOptSetDouble func(obj unsafe.Pointer, name string, val float64, searchFlags int32) int32
+
+	// Hardware context functions
+	avHWDeviceCtxCreate    func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
+	avHWDeviceFindTypeByName func(name string) int32
+	avHWDeviceGetTypeName  func(deviceType int32) unsafe.Pointer
+	avHWFrameTransferData  func(dst, src unsafe.Pointer, flags int32) int32
+
+	// Buffer reference functions
+	avBufferRef   func(buf unsafe.Pointer) unsafe.Pointer
+	avBufferUnref func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
@@ -95,6 +114,16 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
 	purego.RegisterLibFunc(&avOptSetInt, lib, "av_opt_set_int")
 	purego.RegisterLibFunc(&avOptSetDouble, lib, "av_opt_set_double")
+
+	// Hardware context functions
+	purego.RegisterLibFunc(&avHWDeviceCtxCreate, lib, "av_hwdevice_ctx_create")
+	purego.RegisterLibFunc(&avHWDeviceFindTypeByName, lib, "av_hwdevice_find_type_by_name")
+	purego.RegisterLibFunc(&avHWDeviceGetTypeName, lib, "av_hwdevice_get_type_name")
+	purego.RegisterLibFunc(&avHWFrameTransferData, lib, "av_hwframe_transfer_data")
+
+	// Buffer reference functions
+	purego.RegisterLibFunc(&avBufferRef, lib, "av_buffer_ref")
+	purego.RegisterLibFunc(&avBufferUnref, lib, "av_buffer_unref")
 
 	bindingsRegistered = true
 }
@@ -506,4 +535,112 @@ func OptSetDouble(obj unsafe.Pointer, name string, val float64, searchFlags int3
 		return NewError(ret, "av_opt_set_double")
 	}
 	return nil
+}
+
+// HWDeviceType represents a hardware accelerator type.
+type HWDeviceType int32
+
+// Hardware device type constants
+const (
+	HWDeviceTypeNone         HWDeviceType = 0
+	HWDeviceTypeVDPAU        HWDeviceType = 1
+	HWDeviceTypeCUDA         HWDeviceType = 2
+	HWDeviceTypeVAAPI        HWDeviceType = 3
+	HWDeviceTypeDXVA2        HWDeviceType = 4
+	HWDeviceTypeQSV          HWDeviceType = 5
+	HWDeviceTypeVideoToolbox HWDeviceType = 6
+	HWDeviceTypeD3D11VA      HWDeviceType = 7
+	HWDeviceTypeDRM          HWDeviceType = 8
+	HWDeviceTypeOpenCL       HWDeviceType = 9
+	HWDeviceTypeMediaCodec   HWDeviceType = 10
+	HWDeviceTypeVulkan       HWDeviceType = 11
+)
+
+// HWDeviceCtxCreate creates a hardware device context.
+// deviceType is the type of hardware accelerator (e.g., HWDeviceTypeVAAPI).
+// device is an optional device identifier (e.g., "/dev/dri/renderD128" for VAAPI).
+// Returns the device context (must be freed with BufferUnref) or error.
+func HWDeviceCtxCreate(deviceType HWDeviceType, device string) (HWDeviceContext, error) {
+	if avHWDeviceCtxCreate == nil {
+		return nil, bindings.ErrNotLoaded
+	}
+	var ctx unsafe.Pointer
+	ret := avHWDeviceCtxCreate(&ctx, int32(deviceType), device, nil, 0)
+	if ret < 0 {
+		return nil, NewError(ret, "av_hwdevice_ctx_create")
+	}
+	return ctx, nil
+}
+
+// HWDeviceFindTypeByName returns the hardware device type for the given name.
+// Returns HWDeviceTypeNone if the type is not found.
+func HWDeviceFindTypeByName(name string) HWDeviceType {
+	if avHWDeviceFindTypeByName == nil {
+		return HWDeviceTypeNone
+	}
+	return HWDeviceType(avHWDeviceFindTypeByName(name))
+}
+
+// HWDeviceGetTypeName returns the name of the hardware device type.
+func HWDeviceGetTypeName(deviceType HWDeviceType) string {
+	if avHWDeviceGetTypeName == nil {
+		return ""
+	}
+	ptr := avHWDeviceGetTypeName(int32(deviceType))
+	if ptr == nil {
+		return ""
+	}
+	return goString(ptr)
+}
+
+// HWFrameTransferData copies data from a hardware frame to a software frame.
+// dst should be a software frame, src should be a hardware frame.
+func HWFrameTransferData(dst, src Frame, flags int32) error {
+	if avHWFrameTransferData == nil {
+		return bindings.ErrNotLoaded
+	}
+	ret := avHWFrameTransferData(dst, src, flags)
+	if ret < 0 {
+		return NewError(ret, "av_hwframe_transfer_data")
+	}
+	return nil
+}
+
+// NewBufferRef creates a new reference to a buffer.
+func NewBufferRef(buf AVBufferRef) AVBufferRef {
+	if avBufferRef == nil || buf == nil {
+		return nil
+	}
+	return avBufferRef(buf)
+}
+
+// FreeBufferRef unreferences a buffer and sets the pointer to nil.
+func FreeBufferRef(buf *AVBufferRef) {
+	if avBufferUnref == nil || buf == nil || *buf == nil {
+		return
+	}
+	avBufferUnref(buf)
+	*buf = nil
+}
+
+// goString converts a C string to a Go string.
+func goString(ptr unsafe.Pointer) string {
+	if ptr == nil {
+		return ""
+	}
+	var length int
+	for {
+		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
+		if b == 0 {
+			break
+		}
+		length++
+		if length > 256 {
+			break
+		}
+	}
+	if length == 0 {
+		return ""
+	}
+	return string((*[256]byte)(ptr)[:length:length])
 }
