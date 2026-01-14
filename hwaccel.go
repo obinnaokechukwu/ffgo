@@ -323,9 +323,54 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 	}
 }
 
-// TransferToSoftware transfers a hardware frame to a software frame.
-// Use this if OutputSoftwareFrames is false and you need CPU access.
-func (d *HWDecoder) TransferToSoftware(hwFrame Frame) (Frame, error) {
+// ReadHWFrame reads and decodes the next video frame, keeping it in GPU memory.
+// This is useful when you want to process frames on the GPU or control
+// when transfers to CPU memory occur.
+// Use TransferToSystem to transfer the frame to CPU memory when needed.
+func (d *HWDecoder) ReadHWFrame() (Frame, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.closed {
+		return nil, errors.New("ffgo: decoder is closed")
+	}
+
+	for {
+		// Try to receive a frame first
+		ret := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
+		if ret == nil {
+			// Successfully received a frame (stays in GPU memory)
+			return d.frame, nil
+		}
+
+		// Need more data, read a packet
+		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+			return nil, err
+		}
+
+		// Check if this packet is for our video stream
+		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
+		if int(streamIdx) != d.videoStreamIdx {
+			avcodec.PacketUnref(d.packet)
+			continue
+		}
+
+		// Send packet to decoder
+		if err := avcodec.SendPacket(d.videoCodecCtx, d.packet); err != nil {
+			avcodec.PacketUnref(d.packet)
+			// EAGAIN means try receive again
+			if !avutil.IsAgain(err) {
+				return nil, err
+			}
+		}
+		avcodec.PacketUnref(d.packet)
+	}
+}
+
+// TransferToSystem transfers a hardware frame to a software frame in CPU memory.
+// Use this if you called ReadHWFrame and need to process the frame on the CPU.
+// The returned frame must be freed by the caller when no longer needed.
+func (d *HWDecoder) TransferToSystem(hwFrame Frame) (Frame, error) {
 	swFrame := avutil.FrameAlloc()
 	if swFrame == nil {
 		return nil, errors.New("ffgo: failed to allocate frame")
@@ -339,6 +384,12 @@ func (d *HWDecoder) TransferToSoftware(hwFrame Frame) (Frame, error) {
 	// Copy PTS
 	avutil.SetFramePTS(swFrame, avutil.GetFramePTS(hwFrame))
 	return swFrame, nil
+}
+
+// TransferToSoftware transfers a hardware frame to a software frame.
+// Deprecated: Use TransferToSystem instead.
+func (d *HWDecoder) TransferToSoftware(hwFrame Frame) (Frame, error) {
+	return d.TransferToSystem(hwFrame)
 }
 
 // Close releases all decoder resources.

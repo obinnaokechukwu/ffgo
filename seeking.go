@@ -298,6 +298,12 @@ func (d *Decoder) SeekByBytes(bytePos int64) error {
 	return nil
 }
 
+// SeekToByte seeks to a byte position in the file.
+// This is an alias for SeekByBytes for API consistency.
+func (d *Decoder) SeekToByte(bytePos int64) error {
+	return d.SeekByBytes(bytePos)
+}
+
 // TotalFrames returns an estimate of the total number of video frames.
 // This is calculated from duration and frame rate, so may not be exact.
 func (d *Decoder) TotalFrames() int64 {

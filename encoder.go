@@ -31,6 +31,14 @@ type Encoder struct {
 	audioPacket    avcodec.Packet
 	audioFrameSize int // Number of samples per frame for codec
 
+	// Stream copy mode
+	copyVideo       bool
+	copyAudio       bool
+	videoTimeBase   Rational // Source video time base for rescaling
+	audioTimeBase   Rational // Source audio time base for rescaling
+	videoStreamIdx  int      // Index of video stream for WritePacket
+	audioStreamIdx  int      // Index of audio stream for WritePacket
+
 	// Deprecated: use videoCodecCtx
 	codecCtx avcodec.Context
 	// Deprecated: use videoStream
@@ -186,14 +194,41 @@ type AudioEncoderConfig struct {
 	Bitrate int64
 }
 
+// StreamCopySource provides source codec parameters for stream copy mode.
+type StreamCopySource struct {
+	// VideoParams is the video codec parameters from the source stream.
+	VideoParams avcodec.Parameters
+
+	// AudioParams is the audio codec parameters from the source stream.
+	AudioParams avcodec.Parameters
+
+	// VideoTimeBase is the time base of the source video stream.
+	VideoTimeBase Rational
+
+	// AudioTimeBase is the time base of the source audio stream.
+	AudioTimeBase Rational
+}
+
 // EncoderOptions configures encoder behavior with separate video and audio settings.
 type EncoderOptions struct {
-	// Video contains video encoding settings. Required for video output.
+	// Video contains video encoding settings. Required for video output when not copying.
 	Video *VideoEncoderConfig
 
 	// Audio contains audio encoding settings. Optional.
 	// Note: Audio encoding is not yet fully implemented.
 	Audio *AudioEncoderConfig
+
+	// CopyVideo enables video stream copy mode (no re-encoding).
+	// When true, SourceStreams.VideoParams must be set.
+	CopyVideo bool
+
+	// CopyAudio enables audio stream copy mode (no re-encoding).
+	// When true, SourceStreams.AudioParams must be set.
+	CopyAudio bool
+
+	// SourceStreams provides codec parameters from the source for stream copy.
+	// Required when CopyVideo or CopyAudio is true.
+	SourceStreams *StreamCopySource
 }
 
 // NewEncoder creates a new video encoder.
@@ -321,19 +356,43 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 // NewEncoderWithOptions creates a new encoder with separate video and audio configuration.
 // This is the recommended way to create encoders in new code.
 // It supports advanced codec options like presets, profiles, CRF, etc.
+// For stream copy mode, set CopyVideo/CopyAudio and provide SourceStreams.
 func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) {
-	if opts == nil || opts.Video == nil {
-		return nil, errors.New("ffgo: EncoderOptions.Video is required")
+	if opts == nil {
+		return nil, errors.New("ffgo: EncoderOptions is required")
 	}
 
-	video := opts.Video
+	// Validate options - must have either encoding config or stream copy
+	hasVideoEncode := opts.Video != nil
+	hasAudioEncode := opts.Audio != nil
+	hasVideoCopy := opts.CopyVideo
+	hasAudioCopy := opts.CopyAudio
+
+	if !hasVideoEncode && !hasAudioEncode && !hasVideoCopy && !hasAudioCopy {
+		return nil, errors.New("ffgo: must specify Video config, Audio config, CopyVideo, or CopyAudio")
+	}
+
+	// Validate stream copy options
+	if hasVideoCopy && (opts.SourceStreams == nil || opts.SourceStreams.VideoParams == nil) {
+		return nil, errors.New("ffgo: SourceStreams.VideoParams required when CopyVideo is true")
+	}
+	if hasAudioCopy && (opts.SourceStreams == nil || opts.SourceStreams.AudioParams == nil) {
+		return nil, errors.New("ffgo: SourceStreams.AudioParams required when CopyAudio is true")
+	}
 
 	// Ensure FFmpeg is loaded
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
 
-	// Apply defaults
+	// Handle stream copy mode
+	if hasVideoCopy || hasAudioCopy {
+		return newEncoderStreamCopy(path, opts)
+	}
+
+	video := opts.Video
+
+	// Apply defaults for encoding mode
 	if video.Width <= 0 || video.Height <= 0 {
 		return nil, errors.New("ffgo: width and height must be positive")
 	}
@@ -473,6 +532,164 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 
 	return e, nil
+}
+
+// newEncoderStreamCopy creates an encoder in stream copy mode.
+// Packets are copied directly without decoding/encoding.
+func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
+	// Determine format from filename extension
+	formatName := guessFormatFromPath(path)
+	if formatName == "" {
+		return nil, errors.New("ffgo: cannot determine output format from filename")
+	}
+
+	e := &Encoder{
+		copyVideo:      opts.CopyVideo,
+		copyAudio:      opts.CopyAudio,
+		videoStreamIdx: -1,
+		audioStreamIdx: -1,
+	}
+
+	// Create output format context
+	if err := avformat.AllocOutputContext2(&e.formatCtx, nil, formatName, path); err != nil {
+		return nil, err
+	}
+
+	streamIdx := 0
+
+	// Setup video stream for copy mode
+	if opts.CopyVideo && opts.SourceStreams != nil && opts.SourceStreams.VideoParams != nil {
+		// Create stream without codec
+		stream := avformat.NewStream(e.formatCtx, nil)
+		if stream == nil {
+			e.cleanup()
+			return nil, errors.New("ffgo: failed to create video stream for copy")
+		}
+		e.videoStream = stream
+		e.videoStreamIdx = streamIdx
+		streamIdx++
+
+		// Copy codec parameters from source
+		codecPar := avformat.GetStreamCodecPar(stream)
+		if err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.VideoParams); err != nil {
+			e.cleanup()
+			return nil, errors.New("ffgo: failed to copy video codec parameters")
+		}
+
+		// Store time base for timestamp rescaling
+		e.videoTimeBase = opts.SourceStreams.VideoTimeBase
+		e.hasVideo = true
+	}
+
+	// Setup audio stream for copy mode
+	if opts.CopyAudio && opts.SourceStreams != nil && opts.SourceStreams.AudioParams != nil {
+		// Create stream without codec
+		stream := avformat.NewStream(e.formatCtx, nil)
+		if stream == nil {
+			e.cleanup()
+			return nil, errors.New("ffgo: failed to create audio stream for copy")
+		}
+		e.audioStream = stream
+		e.audioStreamIdx = streamIdx
+		streamIdx++
+
+		// Copy codec parameters from source
+		codecPar := avformat.GetStreamCodecPar(stream)
+		if err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.AudioParams); err != nil {
+			e.cleanup()
+			return nil, errors.New("ffgo: failed to copy audio codec parameters")
+		}
+
+		// Store time base for timestamp rescaling
+		e.audioTimeBase = opts.SourceStreams.AudioTimeBase
+		e.hasAudio = true
+	}
+
+	// Setup audio encoding if CopyVideo but encoding audio
+	if opts.CopyVideo && opts.Audio != nil && !opts.CopyAudio {
+		if err := e.setupAudio(opts.Audio); err != nil {
+			e.Close()
+			return nil, err
+		}
+	}
+
+	// Open output file if needed
+	if !avformat.HasNoFile(e.formatCtx) {
+		if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
+			e.cleanup()
+			return nil, err
+		}
+		avformat.SetIOContext(e.formatCtx, e.ioCtx)
+	}
+
+	// Allocate packet for WritePacket
+	e.videoPacket = avcodec.PacketAlloc()
+	if e.videoPacket == nil {
+		e.cleanup()
+		return nil, errors.New("ffgo: failed to allocate packet")
+	}
+
+	return e, nil
+}
+
+// WritePacket writes a packet directly to the output (for stream copy mode).
+// The packet's stream index should match the source stream.
+// For video packets, set streamIndex to match the source video stream.
+// For audio packets, set streamIndex to match the source audio stream.
+func (e *Encoder) WritePacket(packet Packet) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+
+	if !e.copyVideo && !e.copyAudio {
+		return errors.New("ffgo: WritePacket only available in stream copy mode")
+	}
+
+	// Write header if not yet written
+	if !e.headerWritten {
+		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
+			return err
+		}
+		e.headerWritten = true
+	}
+
+	// Determine output stream index based on packet media type
+	packetStreamIdx := avcodec.GetPacketStreamIndex(packet)
+
+	var outputStreamIdx int
+	var srcTimeBase, dstTimeBase Rational
+
+	// Check if this is a video or audio packet based on context
+	// In copy mode, we need to map source stream to output stream
+	if e.copyVideo && e.videoStreamIdx >= 0 && packetStreamIdx == 0 {
+		// Video packet
+		outputStreamIdx = e.videoStreamIdx
+		srcTimeBase = e.videoTimeBase
+		stream := avformat.GetStream(e.formatCtx, e.videoStreamIdx)
+		tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+		dstTimeBase = NewRational(tbNum, tbDen)
+	} else if e.copyAudio && e.audioStreamIdx >= 0 {
+		// Audio packet
+		outputStreamIdx = e.audioStreamIdx
+		srcTimeBase = e.audioTimeBase
+		stream := avformat.GetStream(e.formatCtx, e.audioStreamIdx)
+		tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+		dstTimeBase = NewRational(tbNum, tbDen)
+	} else {
+		return errors.New("ffgo: cannot determine output stream for packet")
+	}
+
+	// Rescale timestamps
+	avcodec.RescalePacketTS(packet, srcTimeBase, dstTimeBase)
+
+	// Set output stream index
+	avcodec.SetPacketStreamIndex(packet, int32(outputStreamIdx))
+
+	// Write packet
+	return avformat.InterleavedWriteFrame(e.formatCtx, packet)
 }
 
 // applyVideoOptions applies advanced video encoding options via av_opt_set.

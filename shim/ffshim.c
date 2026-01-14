@@ -132,6 +132,15 @@ void ffshim_avio_write_string(void *avio_ctx, const char *str) {
 }
 
 /* ============================================================================
+ * CHAPTER HELPERS
+ * ============================================================================ */
+
+void* ffshim_new_chapter(void *ctx, int64_t id, int tb_num, int tb_den, int64_t start, int64_t end, void *metadata) {
+    AVRational time_base = {tb_num, tb_den};
+    return avformat_new_chapter((AVFormatContext*)ctx, id, time_base, start, end, (AVDictionary*)metadata);
+}
+
+/* ============================================================================
  * VERSION INFO
  * ============================================================================ */
 

@@ -74,6 +74,10 @@ const (
 	CodecIDFLAC    CodecID = 86028
 	CodecIDOPUS    CodecID = 86076
 	CodecIDALAC    CodecID = 86032
+
+	// Data/Attachment codec IDs (FFmpeg 0x18000+)
+	CodecIDTTF     CodecID = 98304 // TrueType font
+	CodecIDBinData CodecID = 98312 // Binary data (generic attachment)
 )
 
 // String returns the string representation of the codec ID.

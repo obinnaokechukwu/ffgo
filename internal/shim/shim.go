@@ -25,6 +25,7 @@ var (
 	shimLogSetCallback func(cb uintptr)
 	shimLogSetLevel    func(level int32)
 	shimLog            func(avcl unsafe.Pointer, level int32, msg string)
+	shimNewChapter     func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) unsafe.Pointer
 )
 
 // Load attempts to load the ffshim library.
@@ -82,6 +83,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&shimLogSetCallback, libShim, "ffshim_log_set_callback")
 	purego.RegisterLibFunc(&shimLogSetLevel, libShim, "ffshim_log_set_level")
 	purego.RegisterLibFunc(&shimLog, libShim, "ffshim_log")
+	purego.RegisterLibFunc(&shimNewChapter, libShim, "ffshim_new_chapter")
 }
 
 // SetLogCallback sets the FFmpeg log callback via the shim.
@@ -119,6 +121,22 @@ func Log(avcl unsafe.Pointer, level int32, msg string) error {
 	}
 	shimLog(avcl, level, msg)
 	return nil
+}
+
+// NewChapter creates a new chapter in the format context via the shim.
+// Returns the AVChapter pointer or nil on failure.
+func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) (unsafe.Pointer, error) {
+	if !loaded {
+		return nil, errors.New("ffgo: shim not loaded, chapter writing not available")
+	}
+	if shimNewChapter == nil {
+		return nil, errors.New("ffgo: shimNewChapter not available")
+	}
+	ch := shimNewChapter(ctx, id, tbNum, tbDen, start, end, metadata)
+	if ch == nil {
+		return nil, errors.New("ffgo: failed to create chapter")
+	}
+	return ch, nil
 }
 
 // findShimLibrary looks for the shim library in standard locations.
