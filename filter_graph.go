@@ -443,8 +443,7 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 	// Push frame to buffersrc
 	var framePtr unsafe.Pointer
 	if frame != nil {
-		// frame is *Frame (i.e., *unsafe.Pointer), so dereference to get the actual frame pointer
-		framePtr = (unsafe.Pointer)(*frame)
+		framePtr = frame.ptr
 	}
 
 	if err := avfilter.BufferSrcAddFrameFlags(g.bufferSrc, framePtr, avfilter.AV_BUFFERSRC_FLAG_KEEP_REF); err != nil {
@@ -474,7 +473,7 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 		avutil.FrameRef(newFrame, g.outFrame)
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)
-		*framePtr = newFrame
+		*framePtr = Frame{ptr: newFrame, owned: true}
 		frames = append(frames, framePtr)
 	}
 
@@ -512,7 +511,7 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 		avutil.FrameRef(newFrame, g.outFrame)
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)
-		*framePtr = newFrame
+		*framePtr = Frame{ptr: newFrame, owned: true}
 		frames = append(frames, framePtr)
 	}
 

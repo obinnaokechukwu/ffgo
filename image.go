@@ -20,7 +20,7 @@ import (
 // The format is determined by the file extension (png, jpg, jpeg, bmp).
 // frame must be in a pixel format compatible with the image encoder (RGB24 recommended).
 func SaveFrame(frame Frame, filename string) error {
-	if frame == nil {
+	if frame.IsNil() {
 		return errors.New("ffgo: frame is nil")
 	}
 
@@ -43,9 +43,9 @@ func SaveFrame(frame Frame, filename string) error {
 	}
 
 	// Get frame dimensions
-	width := avutil.GetFrameWidth(frame)
-	height := avutil.GetFrameHeight(frame)
-	pixFmt := avutil.GetFrameFormat(frame)
+	width := avutil.GetFrameWidth(frame.ptr)
+	height := avutil.GetFrameHeight(frame.ptr)
+	pixFmt := avutil.GetFrameFormat(frame.ptr)
 
 	if width == 0 || height == 0 {
 		return errors.New("ffgo: frame has invalid dimensions")
@@ -113,7 +113,7 @@ func SaveFrame(frame Frame, filename string) error {
 	}
 
 	// Send frame
-	err := avcodec.SendFrame(codecCtx, frameToEncode)
+	err := avcodec.SendFrame(codecCtx, frameToEncode.ptr)
 	if err != nil {
 		avcodec.PacketFree(&packet)
 		if scaler != nil {
@@ -188,7 +188,7 @@ func ExtractFrame(inputPath string, ts time.Duration, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		return errors.New("ffgo: no video frame at the specified timestamp")
 	}
 
@@ -234,7 +234,7 @@ func GenerateThumbnails(inputPath string, interval time.Duration, maxCount int, 
 		// Decode a frame at that position
 		// Note: frame is owned by decoder, don't free it
 		frame, err := decoder.DecodeVideo()
-		if err != nil || frame == nil {
+		if err != nil || frame.IsNil() {
 			continue // Skip frames that fail
 		}
 

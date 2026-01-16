@@ -399,12 +399,12 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 	defer d.mu.Unlock()
 
 	if !d.videoDecoderOpen {
-		return nil, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
+		return Frame{}, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
 	}
 
 	// Send packet to decoder
 	if err := avcodec.SendPacket(d.videoCodecCtx, pkt); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Receive decoded frame
@@ -412,12 +412,25 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 	err := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
 	if err != nil {
 		if avutil.IsAgain(err) || avutil.IsEOF(err) {
-			return nil, nil
+			return Frame{}, nil
 		}
-		return nil, err
+		return Frame{}, err
 	}
 
-	return d.frame, nil
+	return Frame{ptr: d.frame, owned: false}, nil
+}
+
+// DecodeVideoPacketCopy decodes a video packet and returns an owned frame.
+//
+// Unlike DecodeVideoPacket (which returns a decoder-owned, internally reused frame),
+// this method returns a cloned frame that the caller MUST free with FrameFree.
+// Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
+func (d *Decoder) DecodeVideoPacketCopy(pkt Packet) (Frame, error) {
+	frame, err := d.DecodeVideoPacket(pkt)
+	if err != nil || frame.IsNil() {
+		return Frame{}, err
+	}
+	return FrameClone(frame)
 }
 
 // DecodeAudioPacket decodes an audio packet and returns the decoded frame.
@@ -428,12 +441,12 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 	defer d.mu.Unlock()
 
 	if !d.audioDecoderOpen {
-		return nil, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
+		return Frame{}, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
 	}
 
 	// Send packet to decoder
 	if err := avcodec.SendPacket(d.audioCodecCtx, pkt); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Receive decoded frame
@@ -441,12 +454,25 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 	err := avcodec.ReceiveFrame(d.audioCodecCtx, d.frame)
 	if err != nil {
 		if avutil.IsAgain(err) || avutil.IsEOF(err) {
-			return nil, nil
+			return Frame{}, nil
 		}
-		return nil, err
+		return Frame{}, err
 	}
 
-	return d.frame, nil
+	return Frame{ptr: d.frame, owned: false}, nil
+}
+
+// DecodeAudioPacketCopy decodes an audio packet and returns an owned frame.
+//
+// Unlike DecodeAudioPacket (which returns a decoder-owned, internally reused frame),
+// this method returns a cloned frame that the caller MUST free with FrameFree.
+// Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
+func (d *Decoder) DecodeAudioPacketCopy(pkt Packet) (Frame, error) {
+	frame, err := d.DecodeAudioPacket(pkt)
+	if err != nil || frame.IsNil() {
+		return Frame{}, err
+	}
+	return FrameClone(frame)
 }
 
 // DecodeVideo reads and decodes the next video frame.
@@ -457,7 +483,7 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 func (d *Decoder) DecodeVideo() (Frame, error) {
 	if !d.videoDecoderOpen {
 		if err := d.OpenVideoDecoder(); err != nil {
-			return nil, err
+			return Frame{}, err
 		}
 	}
 
@@ -467,12 +493,12 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 			if avutil.IsEOF(err) {
 				// Flush decoder
 				frame, err := d.DecodeVideoPacket(nil)
-				if err != nil || frame == nil {
-					return nil, err
+				if err != nil || frame.IsNil() {
+					return Frame{}, err
 				}
 				return frame, nil
 			}
-			return nil, err
+			return Frame{}, err
 		}
 
 		// Skip non-video packets
@@ -483,13 +509,25 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 		// Decode the packet
 		frame, err := d.DecodeVideoPacket(pkt)
 		if err != nil {
-			return nil, err
+			return Frame{}, err
 		}
-		if frame != nil {
+		if !frame.IsNil() {
 			return frame, nil
 		}
 		// Need more data, read next packet
 	}
+}
+
+// DecodeVideoCopy reads and decodes the next video frame and returns an owned frame.
+//
+// The caller MUST free the returned frame with FrameFree.
+// Returns nil frame on EOF.
+func (d *Decoder) DecodeVideoCopy() (Frame, error) {
+	frame, err := d.DecodeVideo()
+	if err != nil || frame.IsNil() {
+		return Frame{}, err
+	}
+	return FrameClone(frame)
 }
 
 // DecodeAudio reads and decodes the next audio frame.
@@ -500,7 +538,7 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 func (d *Decoder) DecodeAudio() (Frame, error) {
 	if !d.audioDecoderOpen {
 		if err := d.OpenAudioDecoder(); err != nil {
-			return nil, err
+			return Frame{}, err
 		}
 	}
 
@@ -510,12 +548,12 @@ func (d *Decoder) DecodeAudio() (Frame, error) {
 			if avutil.IsEOF(err) {
 				// Flush decoder
 				frame, err := d.DecodeAudioPacket(nil)
-				if err != nil || frame == nil {
-					return nil, err
+				if err != nil || frame.IsNil() {
+					return Frame{}, err
 				}
 				return frame, nil
 			}
-			return nil, err
+			return Frame{}, err
 		}
 
 		// Skip non-audio packets
@@ -526,9 +564,9 @@ func (d *Decoder) DecodeAudio() (Frame, error) {
 		// Decode the packet
 		frame, err := d.DecodeAudioPacket(pkt)
 		if err != nil {
-			return nil, err
+			return Frame{}, err
 		}
-		if frame != nil {
+		if !frame.IsNil() {
 			return frame, nil
 		}
 		// Need more data, read next packet
@@ -562,7 +600,7 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 					if err != nil {
 						return nil, err
 					}
-					if frame != nil {
+					if !frame.IsNil() {
 						return WrapFrame(frame, MediaTypeVideo), nil
 					}
 				}
@@ -572,7 +610,7 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 					if err != nil {
 						return nil, err
 					}
-					if frame != nil {
+					if !frame.IsNil() {
 						return WrapFrame(frame, MediaTypeAudio), nil
 					}
 				}
@@ -587,7 +625,7 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 			if err != nil {
 				return nil, err
 			}
-			if frame != nil {
+			if !frame.IsNil() {
 				return WrapFrame(frame, MediaTypeVideo), nil
 			}
 		}
@@ -598,11 +636,23 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 			if err != nil {
 				return nil, err
 			}
-			if frame != nil {
+			if !frame.IsNil() {
 				return WrapFrame(frame, MediaTypeAudio), nil
 			}
 		}
 	}
+}
+
+// ReadFrameCopy reads and decodes the next frame (video or audio) and returns an owned frame wrapper.
+//
+// The returned wrapper owns its underlying frame; the caller MUST call Free() when done.
+// Returns (nil, nil) on EOF.
+func (d *Decoder) ReadFrameCopy() (*FrameWrapper, error) {
+	fw, err := d.ReadFrame()
+	if err != nil || fw == nil {
+		return nil, err
+	}
+	return fw.Copy()
 }
 
 // FlushDecoder flushes all decoder buffers.

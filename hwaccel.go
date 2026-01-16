@@ -277,7 +277,7 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return Frame{}, errors.New("ffgo: decoder is closed")
 	}
 
 	for {
@@ -292,16 +292,16 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 				if err == nil {
 					// Transfer succeeded, copy properties
 					avutil.SetFramePTS(d.swFrame, avutil.GetFramePTS(d.frame))
-					return d.swFrame, nil
+					return Frame{ptr: d.swFrame, owned: false}, nil
 				}
 				// Transfer failed (frame might already be in software format)
 			}
-			return d.frame, nil
+			return Frame{ptr: d.frame, owned: false}, nil
 		}
 
 		// Need more data, read a packet
 		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-			return nil, err
+			return Frame{}, err
 		}
 
 		// Check if this packet is for our video stream
@@ -316,7 +316,7 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 			avcodec.PacketUnref(d.packet)
 			// EAGAIN means try receive again
 			if !avutil.IsAgain(err) {
-				return nil, err
+				return Frame{}, err
 			}
 		}
 		avcodec.PacketUnref(d.packet)
@@ -332,7 +332,7 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return Frame{}, errors.New("ffgo: decoder is closed")
 	}
 
 	for {
@@ -340,12 +340,12 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 		ret := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
 		if ret == nil {
 			// Successfully received a frame (stays in GPU memory)
-			return d.frame, nil
+			return Frame{ptr: d.frame, owned: false}, nil
 		}
 
 		// Need more data, read a packet
 		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-			return nil, err
+			return Frame{}, err
 		}
 
 		// Check if this packet is for our video stream
@@ -360,7 +360,7 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 			avcodec.PacketUnref(d.packet)
 			// EAGAIN means try receive again
 			if !avutil.IsAgain(err) {
-				return nil, err
+				return Frame{}, err
 			}
 		}
 		avcodec.PacketUnref(d.packet)
@@ -373,17 +373,21 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 func (d *HWDecoder) TransferToSystem(hwFrame Frame) (Frame, error) {
 	swFrame := avutil.FrameAlloc()
 	if swFrame == nil {
-		return nil, errors.New("ffgo: failed to allocate frame")
+		return Frame{}, errors.New("ffgo: failed to allocate frame")
 	}
 
-	if err := avutil.HWFrameTransferData(swFrame, hwFrame, 0); err != nil {
+	if hwFrame.ptr == nil {
 		avutil.FrameFree(&swFrame)
-		return nil, err
+		return Frame{}, errors.New("ffgo: hwFrame is nil")
+	}
+	if err := avutil.HWFrameTransferData(swFrame, hwFrame.ptr, 0); err != nil {
+		avutil.FrameFree(&swFrame)
+		return Frame{}, err
 	}
 
 	// Copy PTS
-	avutil.SetFramePTS(swFrame, avutil.GetFramePTS(hwFrame))
-	return swFrame, nil
+	avutil.SetFramePTS(swFrame, avutil.GetFramePTS(hwFrame.ptr))
+	return Frame{ptr: swFrame, owned: true}, nil
 }
 
 // TransferToSoftware transfers a hardware frame to a software frame.

@@ -903,13 +903,13 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 	}
 
 	// Set frame PTS
-	if frame != nil {
-		avutil.SetFramePTS(frame, e.frameCount)
+	if frame.ptr != nil {
+		avutil.SetFramePTS(frame.ptr, e.frameCount)
 		e.frameCount++
 	}
 
 	// Send frame to encoder
-	if err := avcodec.SendFrame(e.codecCtx, frame); err != nil {
+	if err := avcodec.SendFrame(e.codecCtx, frame.ptr); err != nil {
 		// EAGAIN means we need to receive packets first
 		if !avutil.IsAgain(err) {
 			return err
@@ -968,14 +968,14 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 	}
 
 	// Set PTS for audio frame
-	if frame != nil {
+	if frame.ptr != nil {
 		pts := e.audioFrameCnt
-		avutil.SetFramePTS(frame, pts)
-		e.audioFrameCnt += int64(avutil.GetFrameNbSamples(frame))
+		avutil.SetFramePTS(frame.ptr, pts)
+		e.audioFrameCnt += int64(avutil.GetFrameNbSamples(frame.ptr))
 	}
 
 	// Send frame to encoder
-	if err := avcodec.SendFrame(e.audioCodecCtx, frame); err != nil {
+	if err := avcodec.SendFrame(e.audioCodecCtx, frame.ptr); err != nil {
 		if avutil.IsEOF(err) {
 			return nil
 		}
@@ -1015,7 +1015,7 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 // Flush flushes the encoder and writes remaining frames.
 func (e *Encoder) Flush() error {
 	// Send nil frame to flush encoder
-	return e.WriteFrame(nil)
+	return e.WriteFrame(Frame{})
 }
 
 // Width returns the encoder width.

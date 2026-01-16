@@ -142,7 +142,7 @@ func TestDecoderDecodeVideo(t *testing.T) {
 			}
 			t.Fatalf("DecodeVideo failed: %v", err)
 		}
-		if frame != nil {
+		if !frame.IsNil() {
 			frameCount++
 			info := GetFrameInfo(frame)
 			t.Logf("Frame %d: %dx%d, format=%d, pts=%d",
@@ -224,7 +224,7 @@ func TestScalerWithDecoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeVideo failed: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Skip("No frame decoded")
 	}
 
@@ -245,12 +245,12 @@ func TestScalerWithDecoder(t *testing.T) {
 
 func TestFrameAlloc(t *testing.T) {
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		t.Fatal("FrameAlloc returned nil")
 	}
-	defer FrameFree(&frame)
+	defer func() { _ = FrameFree(&frame) }()
 
-	if frame == nil {
+	if frame.IsNil() {
 		t.Error("Frame should not be nil before free")
 	}
 }
@@ -322,10 +322,10 @@ func TestEncoderWriteFrames(t *testing.T) {
 
 	// Create a test frame
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		t.Fatal("FrameAlloc returned nil")
 	}
-	defer FrameFree(&frame)
+	defer func() { _ = FrameFree(&frame) }()
 
 	// Set up frame
 	AVUtil.SetFrameWidth(frame, 160)
@@ -391,19 +391,20 @@ func TestEncoderWriteFrames(t *testing.T) {
 
 // fillTestFrame fills a YUV420P frame with a test pattern
 func fillTestFrame(frame Frame, frameNum, width, height int) {
-	// Get data pointers using avutil package directly
-	data := avutil.GetFrameData(frame)
-	linesize := avutil.GetFrameLinesize(frame)
+	fw := WrapFrame(frame, MediaTypeVideo)
+	if fw == nil {
+		return
+	}
 
 	// Y plane
-	if data[0] != nil {
-		yPlane := (*[1 << 24]byte)(unsafe.Pointer(data[0]))
-		for y := 0; y < height; y++ {
-			for x := 0; x < width; x++ {
-				// Create a moving gradient
-				val := byte((x + y + frameNum*5) % 256)
-				yPlane[y*int(linesize[0])+x] = val
-			}
+	yPlane := fw.Data(0)
+	yStride := fw.Linesize(0)
+	for y := 0; y < height; y++ {
+		row := y * yStride
+		for x := 0; x < width; x++ {
+			// Create a moving gradient
+			val := byte((x + y + frameNum*5) % 256)
+			yPlane[row+x] = val
 		}
 	}
 
@@ -411,21 +412,21 @@ func fillTestFrame(frame Frame, frameNum, width, height int) {
 	uvHeight := height / 2
 	uvWidth := width / 2
 
-	if data[1] != nil {
-		uPlane := (*[1 << 24]byte)(unsafe.Pointer(data[1]))
-		for y := 0; y < uvHeight; y++ {
-			for x := 0; x < uvWidth; x++ {
-				uPlane[y*int(linesize[1])+x] = 128
-			}
+	uPlane := fw.Data(1)
+	uStride := fw.Linesize(1)
+	for y := 0; y < uvHeight; y++ {
+		row := y * uStride
+		for x := 0; x < uvWidth; x++ {
+			uPlane[row+x] = 128
 		}
 	}
 
-	if data[2] != nil {
-		vPlane := (*[1 << 24]byte)(unsafe.Pointer(data[2]))
-		for y := 0; y < uvHeight; y++ {
-			for x := 0; x < uvWidth; x++ {
-				vPlane[y*int(linesize[2])+x] = 128
-			}
+	vPlane := fw.Data(2)
+	vStride := fw.Linesize(2)
+	for y := 0; y < uvHeight; y++ {
+		row := y * vStride
+		for x := 0; x < uvWidth; x++ {
+			vPlane[row+x] = 128
 		}
 	}
 }
@@ -482,7 +483,7 @@ func TestEncoderWithDecoder(t *testing.T) {
 			}
 			t.Fatalf("DecodeVideo failed: %v", err)
 		}
-		if frame == nil {
+		if frame.IsNil() {
 			continue
 		}
 
@@ -578,7 +579,7 @@ func TestDecoderFromReaderWithDecode(t *testing.T) {
 			}
 			t.Fatalf("DecodeVideo failed: %v", err)
 		}
-		if frame != nil {
+		if !frame.IsNil() {
 			frameCount++
 		}
 	}
@@ -645,7 +646,7 @@ func TestDecoderFromIOCallbacks(t *testing.T) {
 	if err != nil && !IsEOF(err) {
 		t.Fatalf("DecodeVideo failed: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Error("Expected a decoded frame")
 	}
 
@@ -737,17 +738,17 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 
 	// Allocate video frame
 	videoFrame := FrameAlloc()
-	if videoFrame == nil {
+	if videoFrame.IsNil() {
 		encoder.Close()
 		t.Fatal("Failed to allocate video frame")
 	}
-	defer FrameFree(&videoFrame)
+	defer func() { _ = FrameFree(&videoFrame) }()
 
-	avutil.SetFrameWidth(videoFrame, 160)
-	avutil.SetFrameHeight(videoFrame, 120)
-	avutil.SetFrameFormat(videoFrame, int32(PixelFormatYUV420P))
+	AVUtil.SetFrameWidth(videoFrame, 160)
+	AVUtil.SetFrameHeight(videoFrame, 120)
+	AVUtil.SetFrameFormat(videoFrame, int32(PixelFormatYUV420P))
 
-	if err := avutil.FrameGetBufferErr(videoFrame, 0); err != nil {
+	if err := AVUtil.FrameGetBuffer(videoFrame, 0); err != nil {
 		encoder.Close()
 		t.Fatalf("Failed to allocate video frame buffer: %v", err)
 	}
@@ -755,7 +756,7 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	// Write a few video frames
 	numVideoFrames := 10
 	for i := 0; i < numVideoFrames; i++ {
-		if err := avutil.FrameMakeWritable(videoFrame); err != nil {
+		if err := AVUtil.FrameMakeWritable(videoFrame); err != nil {
 			encoder.Close()
 			t.Fatalf("FrameMakeWritable failed: %v", err)
 		}
@@ -1265,23 +1266,23 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 
 	// Create test frame
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		t.Fatal("FrameAlloc returned nil")
 	}
-	defer FrameFree(&frame)
+	defer func() { _ = FrameFree(&frame) }()
 
-	avutil.SetFrameWidth(frame, 160)
-	avutil.SetFrameHeight(frame, 120)
-	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
 
 	// Allocate frame buffer
-	if ret := avutil.FrameGetBuffer(frame, 0); ret < 0 {
-		t.Fatalf("FrameGetBuffer failed: %d", ret)
+	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+		t.Fatalf("FrameGetBuffer failed: %v", err)
 	}
 
 	// Write some frames
 	for i := 0; i < 10; i++ {
-		avutil.SetFramePTS(frame, int64(i))
+		avutil.SetFramePTS(frame.ptr, int64(i))
 		if err := enc.WriteFrame(frame); err != nil {
 			t.Fatalf("WriteFrame failed: %v", err)
 		}
@@ -1320,18 +1321,18 @@ func TestRemuxer(t *testing.T) {
 
 	// Create and write frames
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
 
-	avutil.SetFrameWidth(frame, 160)
-	avutil.SetFrameHeight(frame, 120)
-	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	if ret := avutil.FrameGetBuffer(frame, 0); ret < 0 {
-		FrameFree(&frame)
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+		_ = FrameFree(&frame)
 		enc.Close()
-		t.Fatalf("FrameGetBuffer failed: %d", ret)
+		t.Fatalf("FrameGetBuffer failed: %v", err)
 	}
 
 	for i := 0; i < 30; i++ {
@@ -1408,19 +1409,19 @@ func TestRemuxerSelectStreams(t *testing.T) {
 
 	// Write video frames
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	avutil.SetFrameWidth(frame, 160)
-	avutil.SetFrameHeight(frame, 120)
-	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	avutil.FrameGetBuffer(frame, 0)
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 10; i++ {
 		enc.WriteFrame(frame)
 	}
-	FrameFree(&frame)
+	_ = FrameFree(&frame)
 	enc.Close()
 
 	// Open source and remux only video stream
@@ -1528,19 +1529,19 @@ func TestMetadataWrite(t *testing.T) {
 
 	// Write some frames
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	avutil.SetFrameWidth(frame, 160)
-	avutil.SetFrameHeight(frame, 120)
-	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	avutil.FrameGetBuffer(frame, 0)
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 10; i++ {
 		enc.WriteFrame(frame)
 	}
-	FrameFree(&frame)
+	_ = FrameFree(&frame)
 	enc.Close()
 
 	// Verify metadata using ffprobe
@@ -1659,7 +1660,7 @@ func TestHWDecoder(t *testing.T) {
 			t.Logf("Decode error (may be expected for some HW decoders): %v", err)
 			break
 		}
-		if frame != nil {
+		if !frame.IsNil() {
 			frameCount++
 		}
 	}
@@ -1698,7 +1699,7 @@ func TestSeekPrecise(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to decode after seek: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Error("Got nil frame after seek")
 	}
 
@@ -1746,7 +1747,7 @@ func TestSeekToFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to decode after frame seek: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Error("Got nil frame after seek")
 	}
 
@@ -1773,9 +1774,10 @@ func TestExtractThumbnail(t *testing.T) {
 		t.Fatalf("ExtractThumbnail failed: %v", err)
 	}
 
-	if thumbnail == nil {
+	if thumbnail.IsNil() {
 		t.Error("Got nil thumbnail")
 	}
+	defer func() { _ = FrameFree(&thumbnail) }()
 
 	t.Logf("Extracted thumbnail at %v", midPoint)
 }
@@ -1804,10 +1806,10 @@ func TestExtractThumbnails(t *testing.T) {
 
 	// Free the thumbnails
 	for i, th := range thumbnails {
-		if th == nil {
+		if th.IsNil() {
 			t.Errorf("Thumbnail %d is nil", i)
 		} else {
-			FrameFree(&th)
+			_ = FrameFree(&th)
 		}
 	}
 
@@ -2038,19 +2040,19 @@ func TestStreamMetadata(t *testing.T) {
 
 	// Write some frames
 	frame := FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	avutil.SetFrameWidth(frame, 160)
-	avutil.SetFrameHeight(frame, 120)
-	avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	avutil.FrameGetBuffer(frame, 0)
+	AVUtil.SetFrameWidth(frame, 160)
+	AVUtil.SetFrameHeight(frame, 120)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 5; i++ {
 		enc.WriteFrame(frame)
 	}
-	FrameFree(&frame)
+	_ = FrameFree(&frame)
 	enc.Close()
 
 	// Read back
@@ -2261,7 +2263,7 @@ func TestNewNetworkDecoder(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to decode frame: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Error("Expected a frame")
 	}
 }
@@ -2434,11 +2436,12 @@ func TestImageSequenceDecoder(t *testing.T) {
 			}
 			t.Fatalf("DecodeVideo failed: %v", err)
 		}
-		if frame == nil {
+		if frame.IsNil() {
 			break
 		}
 		frameCount++
-		t.Logf("Frame %d: %dx%d", frameCount, avutil.GetFrameWidth(frame), avutil.GetFrameHeight(frame))
+		info := GetFrameInfo(frame)
+		t.Logf("Frame %d: %dx%d", frameCount, info.Width, info.Height)
 	}
 
 	if frameCount == 0 {
@@ -2470,29 +2473,29 @@ func TestImageSequenceEncoder(t *testing.T) {
 	// Create and write 3 test frames
 	for i := 0; i < 3; i++ {
 		frame := FrameAlloc()
-		if frame == nil {
+		if frame.IsNil() {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		avutil.SetFrameWidth(frame, int32(width))
-		avutil.SetFrameHeight(frame, int32(height))
-		avutil.SetFrameFormat(frame, int32(PixelFormatRGB24))
+		AVUtil.SetFrameWidth(frame, int32(width))
+		AVUtil.SetFrameHeight(frame, int32(height))
+		AVUtil.SetFrameFormat(frame, int32(PixelFormatRGB24))
 
-		if err := avutil.FrameGetBufferErr(frame, 32); err != nil {
-			FrameFree(&frame)
+		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}
 
 		// Fill frame with color based on frame number
 		fillTestFrameRGB(frame, uint8((i+1)*80), uint8((i+1)*40), uint8((i+1)*20))
 
-		avutil.SetFramePTS(frame, int64(i))
+		avutil.SetFramePTS(frame.ptr, int64(i))
 
 		if err := encoder.WriteVideoFrame(frame); err != nil {
-			FrameFree(&frame)
+			_ = FrameFree(&frame)
 			t.Fatalf("WriteVideoFrame failed: %v", err)
 		}
-		FrameFree(&frame)
+		_ = FrameFree(&frame)
 	}
 
 	// Close flushes and finalizes the encoder
@@ -2567,7 +2570,7 @@ This is a test
 	if err != nil {
 		t.Fatalf("DecodeVideo failed: %v", err)
 	}
-	if frame == nil {
+	if frame.IsNil() {
 		t.Fatal("No video frame decoded")
 	}
 
@@ -2577,13 +2580,14 @@ This is a test
 		t.Fatalf("Render failed: %v", err)
 	}
 
-	if outFrame == nil {
+	if outFrame.IsNil() {
 		t.Fatal("Render returned nil frame")
 	}
+	defer func() { _ = FrameFree(&outFrame) }()
 
 	// Verify output frame dimensions
-	outWidth := avutil.GetFrameWidth(outFrame)
-	outHeight := avutil.GetFrameHeight(outFrame)
+	outWidth := avutil.GetFrameWidth(outFrame.ptr)
+	outHeight := avutil.GetFrameHeight(outFrame.ptr)
 	if outWidth != int32(videoInfo.Width) || outHeight != int32(videoInfo.Height) {
 		t.Errorf("Output frame dimensions: %dx%d, want %dx%d", outWidth, outHeight, videoInfo.Width, videoInfo.Height)
 	}
@@ -2676,28 +2680,28 @@ func TestMuxer(t *testing.T) {
 	// Create and write test frames
 	for i := 0; i < 10; i++ {
 		frame := FrameAlloc()
-		if frame == nil {
+		if frame.IsNil() {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		avutil.SetFrameWidth(frame, 160)
-		avutil.SetFrameHeight(frame, 120)
-		avutil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+		AVUtil.SetFrameWidth(frame, 160)
+		AVUtil.SetFrameHeight(frame, 120)
+		AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
 
-		if err := avutil.FrameGetBufferErr(frame, 32); err != nil {
-			FrameFree(&frame)
+		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}
 
 		// Fill frame with test pattern
 		fillTestFrameYUV420(frame, uint8(i*25))
-		avutil.SetFramePTS(frame, int64(i))
+		avutil.SetFramePTS(frame.ptr, int64(i))
 
 		if err := muxer.WriteFrame(videoStream, frame); err != nil {
-			FrameFree(&frame)
+			_ = FrameFree(&frame)
 			t.Fatalf("WriteFrame failed: %v", err)
 		}
-		FrameFree(&frame)
+		_ = FrameFree(&frame)
 	}
 
 	// Write trailer
@@ -2736,12 +2740,12 @@ func TestMuxer(t *testing.T) {
 }
 
 func fillTestFrameYUV420(frame Frame, value uint8) {
-	width := int(avutil.GetFrameWidth(frame))
-	height := int(avutil.GetFrameHeight(frame))
+	width := int(avutil.GetFrameWidth(frame.ptr))
+	height := int(avutil.GetFrameHeight(frame.ptr))
 
 	// Y plane
-	yPtr := avutil.GetFrameDataPlane(frame, 0)
-	yLinesize := avutil.GetFrameLinesizePlane(frame, 0)
+	yPtr := avutil.GetFrameDataPlane(frame.ptr, 0)
+	yLinesize := avutil.GetFrameLinesizePlane(frame.ptr, 0)
 	if yPtr != nil && yLinesize > 0 {
 		yData := unsafe.Slice((*byte)(yPtr), int(yLinesize)*height)
 		for y := 0; y < height; y++ {
@@ -2755,8 +2759,8 @@ func fillTestFrameYUV420(frame Frame, value uint8) {
 	uvHeight := height / 2
 	uvWidth := width / 2
 
-	uPtr := avutil.GetFrameDataPlane(frame, 1)
-	uLinesize := avutil.GetFrameLinesizePlane(frame, 1)
+	uPtr := avutil.GetFrameDataPlane(frame.ptr, 1)
+	uLinesize := avutil.GetFrameLinesizePlane(frame.ptr, 1)
 	if uPtr != nil && uLinesize > 0 {
 		uData := unsafe.Slice((*byte)(uPtr), int(uLinesize)*uvHeight)
 		for y := 0; y < uvHeight; y++ {
@@ -2766,8 +2770,8 @@ func fillTestFrameYUV420(frame Frame, value uint8) {
 		}
 	}
 
-	vPtr := avutil.GetFrameDataPlane(frame, 2)
-	vLinesize := avutil.GetFrameLinesizePlane(frame, 2)
+	vPtr := avutil.GetFrameDataPlane(frame.ptr, 2)
+	vLinesize := avutil.GetFrameLinesizePlane(frame.ptr, 2)
 	if vPtr != nil && vLinesize > 0 {
 		vData := unsafe.Slice((*byte)(vPtr), int(vLinesize)*uvHeight)
 		for y := 0; y < uvHeight; y++ {
@@ -2779,10 +2783,10 @@ func fillTestFrameYUV420(frame Frame, value uint8) {
 }
 
 func fillTestFrameRGB(frame Frame, r, g, b uint8) {
-	width := int(avutil.GetFrameWidth(frame))
-	height := int(avutil.GetFrameHeight(frame))
-	dataPtr := avutil.GetFrameDataPlane(frame, 0)
-	linesize := avutil.GetFrameLinesizePlane(frame, 0)
+	width := int(avutil.GetFrameWidth(frame.ptr))
+	height := int(avutil.GetFrameHeight(frame.ptr))
+	dataPtr := avutil.GetFrameDataPlane(frame.ptr, 0)
+	linesize := avutil.GetFrameLinesizePlane(frame.ptr, 0)
 
 	if dataPtr == nil || linesize == 0 {
 		return

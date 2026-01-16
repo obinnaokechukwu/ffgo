@@ -93,7 +93,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Decode error: %v\n", err)
 				break
 			}
-			if frame == nil {
+			if frame.IsNil() {
 				continue
 			}
 

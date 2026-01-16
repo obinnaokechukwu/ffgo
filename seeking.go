@@ -154,16 +154,17 @@ func (d *Decoder) SeekToFrame(frameNum int64) error {
 func (d *Decoder) ExtractThumbnail(ts time.Duration) (Frame, error) {
 	// Ensure video decoder is open
 	if err := d.OpenVideoDecoder(); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Seek to the target position
 	if err := d.SeekPrecise(ts); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Decode the next frame
-	return d.DecodeVideo()
+	// Return an owned frame (safe for caller to free).
+	return d.DecodeVideoCopy()
 }
 
 // ExtractThumbnailAtFrame extracts a frame at the specified frame number.
@@ -172,16 +173,17 @@ func (d *Decoder) ExtractThumbnail(ts time.Duration) (Frame, error) {
 func (d *Decoder) ExtractThumbnailAtFrame(frameNum int64) (Frame, error) {
 	// Ensure video decoder is open
 	if err := d.OpenVideoDecoder(); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Seek to the frame
 	if err := d.SeekToFrame(frameNum); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Decode the next frame
-	return d.DecodeVideo()
+	// Return an owned frame (safe for caller to free).
+	return d.DecodeVideoCopy()
 }
 
 // ExtractThumbnails extracts multiple frames at evenly spaced intervals.
@@ -213,28 +215,12 @@ func (d *Decoder) ExtractThumbnails(count int) ([]Frame, error) {
 		if err != nil {
 			// Free already extracted frames
 			for _, f := range frames {
-				FrameFree(&f)
+				_ = FrameFree(&f)
 			}
 			return nil, err
 		}
-
-		// Clone the frame since ExtractThumbnail may reuse internal frame
-		clonedFrame := avutil.FrameAlloc()
-		if clonedFrame == nil {
-			for _, f := range frames {
-				FrameFree(&f)
-			}
-			return nil, errors.New("ffgo: failed to allocate frame")
-		}
-		if err := avutil.FrameRef(clonedFrame, frame); err != nil {
-			avutil.FrameFree(&clonedFrame)
-			for _, f := range frames {
-				FrameFree(&f)
-			}
-			return nil, err
-		}
-
-		frames = append(frames, clonedFrame)
+		// ExtractThumbnail already returns an owned frame.
+		frames = append(frames, frame)
 	}
 
 	return frames, nil

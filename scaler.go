@@ -144,21 +144,22 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 // Returns the scaled frame (owned by Scaler, copy if you need to keep it).
 func (s *Scaler) Scale(src Frame) (Frame, error) {
 	if s.ctx == nil {
-		return nil, errors.New("ffgo: scaler is closed")
+		return Frame{}, errors.New("ffgo: scaler is closed")
 	}
 
 	// Make destination writable
 	if err := avutil.FrameMakeWritable(s.dstFrame); err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	// Perform scaling
-	ret := swscale.ScaleFrame(s.ctx, s.dstFrame, src)
+	ret := swscale.ScaleFrame(s.ctx, s.dstFrame, src.ptr)
 	if ret < 0 {
-		return nil, avutil.NewError(ret, "sws_scale_frame")
+		return Frame{}, avutil.NewError(ret, "sws_scale_frame")
 	}
 
-	return s.dstFrame, nil
+	// Returned frame is owned by the scaler (reused); clone if you need to keep it.
+	return Frame{ptr: s.dstFrame, owned: false}, nil
 }
 
 // ScaleTo scales the source frame into the provided destination frame.
@@ -169,7 +170,7 @@ func (s *Scaler) ScaleTo(dst, src Frame) error {
 		return errors.New("ffgo: scaler is closed")
 	}
 
-	ret := swscale.ScaleFrame(s.ctx, dst, src)
+	ret := swscale.ScaleFrame(s.ctx, dst.ptr, src.ptr)
 	if ret < 0 {
 		return avutil.NewError(ret, "sws_scale_frame")
 	}

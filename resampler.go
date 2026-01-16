@@ -93,16 +93,16 @@ func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 // Returns a new frame with resampled audio, or nil if more input needed
 func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	if r.closed {
-		return nil, fmt.Errorf("resampler is closed")
+		return Frame{}, fmt.Errorf("resampler is closed")
 	}
-	if frame == nil {
-		return nil, nil
+	if frame.IsNil() {
+		return Frame{}, nil
 	}
 
 	// Allocate output frame
 	outFrame := avutil.FrameAlloc()
 	if outFrame == nil {
-		return nil, fmt.Errorf("failed to allocate output frame")
+		return Frame{}, fmt.Errorf("failed to allocate output frame")
 	}
 
 	// Set output frame parameters
@@ -111,7 +111,7 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	avutil.FrameSetFormat(outFrame, int32(r.dstFormat.SampleFormat))
 
 	// Calculate output samples
-	inSamples := int(avutil.GetFrameNbSamples(frame))
+	inSamples := int(avutil.GetFrameNbSamples(frame.ptr))
 	outSamples := swresample.GetOutSamples(r.ctx, inSamples)
 	if outSamples <= 0 {
 		outSamples = inSamples * r.dstFormat.SampleRate / r.srcFormat.SampleRate + 256
@@ -121,35 +121,35 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	// Get buffer for output frame
 	if err := avutil.FrameGetBufferErr(outFrame, 0); err != nil {
 		avutil.FrameFree(&outFrame)
-		return nil, fmt.Errorf("failed to allocate output frame buffer: %w", err)
+		return Frame{}, fmt.Errorf("failed to allocate output frame buffer: %w", err)
 	}
 
 	// Convert
-	err := swresample.ConvertFrame(r.ctx, outFrame, frame)
+	err := swresample.ConvertFrame(r.ctx, outFrame, frame.ptr)
 	if err != nil {
 		avutil.FrameFree(&outFrame)
-		return nil, fmt.Errorf("failed to convert frame: %w", err)
+		return Frame{}, fmt.Errorf("failed to convert frame: %w", err)
 	}
 
-	return outFrame, nil
+	return Frame{ptr: outFrame, owned: true}, nil
 }
 
 // Flush drains any remaining samples from the resampler
 func (r *Resampler) Flush() (Frame, error) {
 	if r.closed {
-		return nil, fmt.Errorf("resampler is closed")
+		return Frame{}, fmt.Errorf("resampler is closed")
 	}
 
 	// Check if there's any delay
 	delay := swresample.GetDelay(r.ctx, int64(r.dstFormat.SampleRate))
 	if delay <= 0 {
-		return nil, nil
+		return Frame{}, nil
 	}
 
 	// Allocate output frame
 	outFrame := avutil.FrameAlloc()
 	if outFrame == nil {
-		return nil, fmt.Errorf("failed to allocate output frame")
+		return Frame{}, fmt.Errorf("failed to allocate output frame")
 	}
 
 	// Set output frame parameters
@@ -161,17 +161,17 @@ func (r *Resampler) Flush() (Frame, error) {
 	// Get buffer for output frame
 	if err := avutil.FrameGetBufferErr(outFrame, 0); err != nil {
 		avutil.FrameFree(&outFrame)
-		return nil, fmt.Errorf("failed to allocate output frame buffer: %w", err)
+		return Frame{}, fmt.Errorf("failed to allocate output frame buffer: %w", err)
 	}
 
 	// Flush (convert with NULL input)
 	err := swresample.ConvertFrame(r.ctx, outFrame, nil)
 	if err != nil {
 		avutil.FrameFree(&outFrame)
-		return nil, fmt.Errorf("failed to flush resampler: %w", err)
+		return Frame{}, fmt.Errorf("failed to flush resampler: %w", err)
 	}
 
-	return outFrame, nil
+	return Frame{ptr: outFrame, owned: true}, nil
 }
 
 // Close releases resources

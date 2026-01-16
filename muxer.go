@@ -387,7 +387,7 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 	}
 
 	// Send frame to encoder
-	if err := avcodec.SendFrame(ms.codecCtx, frame); err != nil {
+	if err := avcodec.SendFrame(ms.codecCtx, frame.ptr); err != nil {
 		return err
 	}
 
@@ -507,8 +507,8 @@ func (m *Muxer) Close() error {
 			if ms.encoder.packet != nil {
 				avcodec.PacketFree(&ms.encoder.packet)
 			}
-			if ms.encoder.frame != nil {
-				avutil.FrameFree(&ms.encoder.frame)
+			if !ms.encoder.frame.IsNil() {
+				_ = ms.encoder.frame.Free()
 			}
 		}
 		if ms.codecCtx != nil && !ms.copyMode {
