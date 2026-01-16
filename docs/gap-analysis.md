@@ -131,7 +131,7 @@
 **ffgo status**: ⚠️ Partially implemented
 - ✅ `NewCapture` / `CaptureScreen` exist and use FFmpeg device demuxers
 - ✅ Automatically loads `libavdevice` when capture APIs are used
-- ❌ `ListDevices` is not implemented (returns an explicit error)
+- ✅ `ListDevices` / `ListDevicesWithOptions` implemented (requires libavdevice + shim helper)
 - ⚠️ Capture is environment-dependent (requires FFmpeg built with device support + OS permissions)
 
 ### Multi-Pass Encoding
@@ -139,9 +139,9 @@
 - Statistics collection in first pass
 - Optimal bitrate distribution in second pass
 
-**ffgo status**: NOT implemented
-- Single-pass encoding only
-- **Workaround**: Use quality-based encoding (CRF)
+**ffgo status**: ✅ Implemented
+- `TwoPassTranscode` helper + `EncoderOptions.Pass*`
+- Uses `AV_CODEC_FLAG_PASS1/PASS2` + `passlogfile`/`stats` options (x264/x265 supported on typical builds)
 
 ### Advanced Format Probing
 **FFmpeg capability**: Detailed format detection
@@ -149,9 +149,8 @@
 - Multiple format attempts
 - Stream-level probing options
 
-**ffgo status**: Basic detection only
-- Relies on avformat_find_stream_info()
-- No manual probe configuration
+**ffgo status**: ✅ Implemented
+- Typed probe controls in `DecoderOptions` (ProbeSizeBytes, AnalyzeDuration, MaxProbePackets, whitelist fields)
 
 ## Summary Statistics
 

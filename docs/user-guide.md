@@ -381,6 +381,26 @@ for {
 }
 ```
 
+### Two-Pass Transcode (x264/x265)
+
+`TwoPassTranscode` runs two-pass encoding when your FFmpeg encoder supports it (commonly `libx264` / `libx265`).
+
+```go
+err := ffgo.TwoPassTranscode("input.mp4", "output.mp4", &ffgo.EncoderOptions{
+    Video: &ffgo.VideoEncoderConfig{
+        Codec:       ffgo.CodecH264,
+        PixelFormat: ffgo.PixelFormatYUV420P,
+        Bitrate:     2_000_000,
+        GOPSize:     48,
+    },
+    // Optional: provide a stable base path for stats files; otherwise ffgo uses a temp base.
+    PassLogFile: "/tmp/ffgo-passlog",
+})
+if err != nil {
+    return err
+}
+```
+
 ---
 
 ## Scaling and Format Conversion

@@ -59,7 +59,7 @@ All features documented in user-guide.md are now fully implemented.
 - ✅ CaptureScreen, CaptureScreenWithOptions
 - ✅ ScreenCaptureOptions
 - ✅ DeviceType (Video/Audio)
-- ✅ ListDevices (returns not implemented error as documented)
+- ✅ ListDevices / ListDevicesWithOptions (requires libavdevice + shim; may return empty list depending on OS/permissions)
 
 ### Network Streaming
 - ✅ NewNetworkDecoder

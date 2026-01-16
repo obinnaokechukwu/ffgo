@@ -349,6 +349,47 @@ func (m *Muxer) WriteHeader() error {
 		return errors.New("ffgo: no streams added")
 	}
 
+	return m.writeHeaderLocked(nil)
+}
+
+// WriteHeaderWithOptions writes the container header with muxer-specific options.
+// Options are passed to FFmpeg's avformat_write_header.
+func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed {
+		return errors.New("ffgo: muxer is closed")
+	}
+	if m.headerWritten {
+		return errors.New("ffgo: header already written")
+	}
+	if len(m.streams) == 0 {
+		return errors.New("ffgo: no streams added")
+	}
+
+	var dict avutil.Dictionary
+	for k, v := range opts {
+		if v == "" {
+			continue
+		}
+		if err := avutil.DictSet(&dict, k, v, 0); err != nil {
+			if dict != nil {
+				avutil.DictFree(&dict)
+			}
+			return err
+		}
+	}
+	defer func() {
+		if dict != nil {
+			avutil.DictFree(&dict)
+		}
+	}()
+
+	return m.writeHeaderLocked(&dict)
+}
+
+func (m *Muxer) writeHeaderLocked(dict *avutil.Dictionary) error {
 	// Open output file
 	if err := avformat.IOOpen(&m.ioCtx, m.path, avformat.IOFlagWrite); err != nil {
 		return err
@@ -356,7 +397,7 @@ func (m *Muxer) WriteHeader() error {
 	avformat.SetIOContext(m.formatCtx, m.ioCtx)
 
 	// Write header
-	if err := avformat.WriteHeader(m.formatCtx, nil); err != nil {
+	if err := avformat.WriteHeader(m.formatCtx, dict); err != nil {
 		return err
 	}
 

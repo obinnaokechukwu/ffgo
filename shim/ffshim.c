@@ -10,6 +10,8 @@
 #include <libavutil/rational.h>
 #include <libavutil/error.h>
 #include <libavutil/avutil.h>
+#include <libavutil/mem.h>
+#include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
@@ -136,8 +138,35 @@ void ffshim_avio_write_string(void *avio_ctx, const char *str) {
  * ============================================================================ */
 
 void* ffshim_new_chapter(void *ctx, int64_t id, int tb_num, int tb_den, int64_t start, int64_t end, void *metadata) {
-    AVRational time_base = {tb_num, tb_den};
-    return avformat_new_chapter((AVFormatContext*)ctx, id, time_base, start, end, (AVDictionary*)metadata);
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    AVFormatContext *fc = (AVFormatContext *)ctx;
+    AVChapter *ch = (AVChapter *)av_mallocz(sizeof(AVChapter));
+    if (ch == NULL) {
+        return NULL;
+    }
+
+    ch->id = id;
+    ch->time_base = (AVRational){tb_num, tb_den};
+    ch->start = start;
+    ch->end = end;
+    ch->metadata = (AVDictionary *)metadata; // take ownership
+
+    // Grow chapters array
+    unsigned int newCount = fc->nb_chapters + 1;
+    AVChapter **newArr = (AVChapter **)av_realloc_array(fc->chapters, newCount, sizeof(AVChapter *));
+    if (newArr == NULL) {
+        // If we took metadata ownership, keep it with the chapter so caller doesn't free it.
+        av_free(ch);
+        return NULL;
+    }
+    fc->chapters = newArr;
+    fc->chapters[fc->nb_chapters] = ch;
+    fc->nb_chapters = newCount;
+
+    return ch;
 }
 
 /* ============================================================================
@@ -154,4 +183,150 @@ unsigned int ffshim_avcodec_version(void) {
 
 unsigned int ffshim_avformat_version(void) {
     return avformat_version();
+}
+
+/* ============================================================================
+ * AVDEVICE HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+#ifdef FFSHIM_HAVE_AVDEVICE
+
+#include <libavdevice/avdevice.h>
+
+static int g_avdevice_registered = 0;
+
+int ffshim_avdevice_list_input_sources(
+    const char *format_name,
+    const char *device_name,
+    void *avdict_opts,
+    int *out_count,
+    char ***out_names,
+    char ***out_descs
+) {
+    if (out_count == NULL || out_names == NULL || out_descs == NULL) {
+        return AVERROR(EINVAL);
+    }
+
+    *out_count = 0;
+    *out_names = NULL;
+    *out_descs = NULL;
+
+    if (format_name == NULL || format_name[0] == '\0') {
+        return AVERROR(EINVAL);
+    }
+
+    if (!g_avdevice_registered) {
+        avdevice_register_all();
+        g_avdevice_registered = 1;
+    }
+
+    AVInputFormat *fmt = av_find_input_format(format_name);
+    if (fmt == NULL) {
+        return AVERROR(EINVAL);
+    }
+
+    AVDeviceInfoList *list = NULL;
+    AVDictionary *dict = (AVDictionary *)avdict_opts;
+
+    int ret = avdevice_list_input_sources(fmt,
+                                         (device_name != NULL && device_name[0] != '\0') ? device_name : NULL,
+                                         dict,
+                                         &list);
+    if (ret < 0) {
+        if (list != NULL) {
+            avdevice_free_list_devices(&list);
+        }
+        return ret;
+    }
+    if (list == NULL || list->nb_devices <= 0) {
+        if (list != NULL) {
+            avdevice_free_list_devices(&list);
+        }
+        return 0;
+    }
+
+    int count = list->nb_devices;
+
+    char **names = (char **)av_mallocz((size_t)count * sizeof(char *));
+    char **descs = (char **)av_mallocz((size_t)count * sizeof(char *));
+    if (names == NULL || descs == NULL) {
+        if (names != NULL) av_free(names);
+        if (descs != NULL) av_free(descs);
+        avdevice_free_list_devices(&list);
+        return AVERROR(ENOMEM);
+    }
+
+    for (int i = 0; i < count; i++) {
+        AVDeviceInfo *dev = list->devices[i];
+        const char *dn = (dev != NULL && dev->device_name != NULL) ? dev->device_name : "";
+        const char *dd = (dev != NULL && dev->device_description != NULL) ? dev->device_description : "";
+        names[i] = av_strdup(dn);
+        descs[i] = av_strdup(dd);
+    }
+
+    avdevice_free_list_devices(&list);
+
+    *out_count = count;
+    *out_names = names;
+    *out_descs = descs;
+    return 0;
+}
+
+void ffshim_avdevice_free_string_array(char **arr, int count) {
+    if (arr == NULL || count <= 0) {
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        if (arr[i] != NULL) {
+            av_free(arr[i]);
+        }
+    }
+    av_free(arr);
+}
+
+#else
+
+int ffshim_avdevice_list_input_sources(
+    const char *format_name,
+    const char *device_name,
+    void *avdict_opts,
+    int *out_count,
+    char ***out_names,
+    char ***out_descs
+) {
+    (void)format_name;
+    (void)device_name;
+    (void)avdict_opts;
+    if (out_count) *out_count = 0;
+    if (out_names) *out_names = NULL;
+    if (out_descs) *out_descs = NULL;
+    return AVERROR(ENOSYS);
+}
+
+void ffshim_avdevice_free_string_array(char **arr, int count) {
+    (void)arr;
+    (void)count;
+}
+
+#endif
+
+/* ============================================================================
+ * AVFRAME OFFSET HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+int ffshim_avframe_color_offsets(
+    int *out_color_range,
+    int *out_colorspace,
+    int *out_color_primaries,
+    int *out_color_trc
+) {
+    if (out_color_range == NULL || out_colorspace == NULL || out_color_primaries == NULL || out_color_trc == NULL) {
+        return -1;
+    }
+
+    *out_color_range = (int)offsetof(AVFrame, color_range);
+    *out_colorspace = (int)offsetof(AVFrame, colorspace);
+    *out_color_primaries = (int)offsetof(AVFrame, color_primaries);
+    *out_color_trc = (int)offsetof(AVFrame, color_trc);
+    return 0;
 }

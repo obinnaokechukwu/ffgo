@@ -622,6 +622,8 @@ func SetCtxFramerate(ctx Context, num, den int32) {
 // Codec flag constants
 const (
 	CodecFlagGlobalHeader = 1 << 22 // AV_CODEC_FLAG_GLOBAL_HEADER (4194304)
+	CodecFlagPass1        = 1 << 9  // AV_CODEC_FLAG_PASS1
+	CodecFlagPass2        = 1 << 10 // AV_CODEC_FLAG_PASS2
 )
 
 // Audio codec context accessors

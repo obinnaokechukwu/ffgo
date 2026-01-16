@@ -11,6 +11,7 @@
 #define FFSHIM_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,7 +62,7 @@ void ffshim_avio_write_string(void *avio_ctx, const char *str);
  * ============================================================================ */
 
 /* Create a new chapter in the format context */
-void* ffshim_new_chapter(void *ctx, long long id, int tb_num, int tb_den, long long start, long long end, void *metadata);
+void* ffshim_new_chapter(void *ctx, int64_t id, int tb_num, int tb_den, int64_t start, int64_t end, void *metadata);
 
 /* ============================================================================
  * VERSION INFO
@@ -70,6 +71,49 @@ void* ffshim_new_chapter(void *ctx, long long id, int tb_num, int tb_den, long l
 unsigned int ffshim_avutil_version(void);
 unsigned int ffshim_avcodec_version(void);
 unsigned int ffshim_avformat_version(void);
+
+/* ============================================================================
+ * AVDEVICE HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+/*
+ * List input sources for a given device input format.
+ *
+ * - format_name: avdevice demuxer name (e.g. "v4l2", "alsa", "dshow", "avfoundation")
+ * - device_name: optional selector string (nullable)
+ * - avdict_opts: AVDictionary* (nullable) - forwarded to FFmpeg
+ * - out_count: number of devices returned
+ * - out_names/out_descs: char** arrays allocated by the shim (must be freed)
+ *
+ * Returns 0 on success, negative AVERROR on failure.
+ */
+int ffshim_avdevice_list_input_sources(
+    const char *format_name,
+    const char *device_name,
+    void *avdict_opts,
+    int *out_count,
+    char ***out_names,
+    char ***out_descs
+);
+
+/* Free a char** array allocated by the shim using FFmpeg allocators. */
+void ffshim_avdevice_free_string_array(char **arr, int count);
+
+/* ============================================================================
+ * AVFRAME OFFSET HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+/*
+ * Returns offsets (in bytes) for AVFrame color-related fields.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int ffshim_avframe_color_offsets(
+    int *out_color_range,
+    int *out_colorspace,
+    int *out_color_primaries,
+    int *out_color_trc
+);
 
 #ifdef __cplusplus
 }
