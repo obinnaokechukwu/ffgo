@@ -44,6 +44,9 @@ var (
 	swsIsSupportedIn  func(format int32) int32
 	swsIsSupportedOut func(format int32) int32
 
+	swsGetColorspaceDetails func(ctx unsafe.Pointer, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
+	swsSetColorspaceDetails func(ctx unsafe.Pointer, invTable unsafe.Pointer, srcRange int32, table unsafe.Pointer, dstRange int32, brightness, contrast, saturation int32) int32
+
 	bindingsRegistered bool
 )
 
@@ -77,7 +80,16 @@ func registerBindings() {
 	purego.RegisterLibFunc(&swsIsSupportedIn, lib, "sws_isSupportedInput")
 	purego.RegisterLibFunc(&swsIsSupportedOut, lib, "sws_isSupportedOutput")
 
+	// Optional in some FFmpeg builds / versions
+	registerOptionalLibFunc(&swsGetColorspaceDetails, lib, "sws_getColorspaceDetails")
+	registerOptionalLibFunc(&swsSetColorspaceDetails, lib, "sws_setColorspaceDetails")
+
 	bindingsRegistered = true
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() { _ = recover() }()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // GetContext creates a scaling context for the given parameters.
@@ -177,4 +189,25 @@ func IsSupportedOutput(format avutil.PixelFormat) bool {
 		return false
 	}
 	return swsIsSupportedOut(int32(format)) > 0
+}
+
+// HasColorspaceDetails reports whether sws_getColorspaceDetails/sws_setColorspaceDetails are available.
+func HasColorspaceDetails() bool {
+	return swsGetColorspaceDetails != nil && swsSetColorspaceDetails != nil
+}
+
+// GetColorspaceDetails wraps sws_getColorspaceDetails.
+func GetColorspaceDetails(ctx Context, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32 {
+	if ctx == nil || swsGetColorspaceDetails == nil {
+		return -1
+	}
+	return swsGetColorspaceDetails(ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
+}
+
+// SetColorspaceDetails wraps sws_setColorspaceDetails.
+func SetColorspaceDetails(ctx Context, invTable unsafe.Pointer, srcRange int32, table unsafe.Pointer, dstRange int32, brightness, contrast, saturation int32) int32 {
+	if ctx == nil || swsSetColorspaceDetails == nil {
+		return -1
+	}
+	return swsSetColorspaceDetails(ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
 }

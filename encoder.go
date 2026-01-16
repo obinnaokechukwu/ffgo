@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"sync"
+	"strings"
 	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avcodec"
@@ -229,6 +230,18 @@ type EncoderOptions struct {
 	// SourceStreams provides codec parameters from the source for stream copy.
 	// Required when CopyVideo or CopyAudio is true.
 	SourceStreams *StreamCopySource
+
+	// Pass enables 2-pass encoding when set to 1 or 2.
+	// 0 disables multi-pass.
+	Pass int
+
+	// PassLogFile is the passlogfile base path used by the encoder (e.g. x264/x265).
+	// If empty, TwoPassTranscode may generate a temporary base.
+	PassLogFile string
+
+	// PassOutput optionally overrides the output path for pass 1.
+	// If empty, TwoPassTranscode will create a temporary file.
+	PassOutput string
 }
 
 // NewEncoder creates a new video encoder.
@@ -390,7 +403,10 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 		return newEncoderStreamCopy(path, opts)
 	}
 
-	video := opts.Video
+	// Clone video config so we can safely inject encoder-specific options (e.g. 2-pass for libx265)
+	// without mutating caller-owned config.
+	videoCfg := *opts.Video
+	video := &videoCfg
 
 	// Apply defaults for encoding mode
 	if video.Width <= 0 || video.Height <= 0 {
@@ -448,6 +464,23 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 		return nil, errors.New("ffgo: encoder not found")
 	}
 
+	// Encoder-specific: libx265 does not expose passlogfile/stats AVOptions via FFmpeg,
+	// but does support 2-pass via x265-params (pass=N:stats=FILE).
+	if opts.Pass != 0 && strings.HasPrefix(avcodec.GetCodecName(codec), "libx265") {
+		if video.CodecOptions == nil {
+			video.CodecOptions = make(map[string]string)
+		}
+		// Only inject if user didn't already specify pass/stats.
+		xp := video.CodecOptions["x265-params"]
+		if !strings.Contains(xp, "pass=") && !strings.Contains(xp, "stats=") {
+			if xp != "" && !strings.HasSuffix(xp, ":") {
+				xp += ":"
+			}
+			xp += "pass=" + intToString(opts.Pass) + ":stats=" + opts.PassLogFile
+			video.CodecOptions["x265-params"] = xp
+		}
+	}
+
 	// Create video stream
 	e.videoStream = avformat.NewStream(e.formatCtx, codec)
 	if e.videoStream == nil {
@@ -490,10 +523,51 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 		avcodec.SetCtxFlags(e.codecCtx, flags|avcodec.CodecFlagGlobalHeader)
 	}
 
+	// Configure multi-pass flags (FFmpeg uses codec context flags, not an option named "pass").
+	if opts.Pass != 0 {
+		flags := avcodec.GetCtxFlags(e.codecCtx)
+		flags &^= (avcodec.CodecFlagPass1 | avcodec.CodecFlagPass2)
+		if opts.Pass == 1 {
+			flags |= avcodec.CodecFlagPass1
+		} else if opts.Pass == 2 {
+			flags |= avcodec.CodecFlagPass2
+		}
+		avcodec.SetCtxFlags(e.codecCtx, flags)
+	}
+
+	// Open codec (pass pass/passlogfile via AVDictionary** to ensure the encoder's
+	// private options (e.g. libx264/libx265) are applied before priv_data is allocated).
+	var openDict avutil.Dictionary
+	if opts.Pass != 0 {
+		if opts.Pass != 1 && opts.Pass != 2 {
+			e.cleanup()
+			return nil, errors.New("ffgo: Pass must be 0, 1, or 2")
+		}
+		if opts.PassLogFile == "" {
+			e.cleanup()
+			return nil, errors.New("ffgo: PassLogFile is required when Pass is set")
+		}
+		// Set stats filename (libx264/libx265 accept both keys).
+		if err := avutil.DictSet(&openDict, "passlogfile", opts.PassLogFile, 0); err != nil {
+			if openDict != nil {
+				avutil.DictFree(&openDict)
+			}
+			e.cleanup()
+			return nil, err
+		}
+		_ = avutil.DictSet(&openDict, "stats", opts.PassLogFile, 0)
+	}
+
 	// Open codec
-	if err := avcodec.Open2(e.codecCtx, codec, nil); err != nil {
+	if err := avcodec.Open2(e.codecCtx, codec, &openDict); err != nil {
+		if openDict != nil {
+			avutil.DictFree(&openDict)
+		}
 		e.cleanup()
 		return nil, err
+	}
+	if openDict != nil {
+		avutil.DictFree(&openDict)
 	}
 
 	// Copy codec parameters to stream
@@ -532,6 +606,17 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 
 	return e, nil
+}
+
+func intToString(v int) string {
+	switch v {
+	case 1:
+		return "1"
+	case 2:
+		return "2"
+	default:
+		return ""
+	}
 }
 
 // newEncoderStreamCopy creates an encoder in stream copy mode.

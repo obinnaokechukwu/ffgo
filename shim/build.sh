@@ -64,6 +64,15 @@ fi
 CFLAGS="$(pkg-config --cflags libavutil libavcodec libavformat) -Wall -Wextra -O2"
 LDFLAGS="$(pkg-config --libs libavutil libavcodec libavformat)"
 
+# Optional: libavdevice (enables device enumeration helpers)
+if pkg-config --exists libavdevice; then
+    CFLAGS="$CFLAGS $(pkg-config --cflags libavdevice)"
+    LDFLAGS="$LDFLAGS $(pkg-config --libs libavdevice)"
+    CFLAGS="$CFLAGS -DFFSHIM_HAVE_AVDEVICE=1"
+else
+    echo "Warning: libavdevice dev package not found. Building shim without device helpers."
+fi
+
 build() {
     echo "Building ${OUTPUT}..."
     echo "  OS: $OS"

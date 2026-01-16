@@ -31,6 +31,13 @@ var (
 
 	// ErrDecoderNotOpened indicates the decoder has not been opened.
 	ErrDecoderNotOpened = errors.New("ffgo: decoder not opened")
+
+	// ErrAVDeviceUnavailable indicates FFmpeg's libavdevice could not be loaded.
+	ErrAVDeviceUnavailable = errors.New("ffgo: libavdevice not available")
+
+	// ErrDeviceEnumerationUnavailable indicates device enumeration is not available
+	// (e.g. missing shim wrappers, unsupported FFmpeg build, or platform constraints).
+	ErrDeviceEnumerationUnavailable = errors.New("ffgo: device enumeration not available")
 )
 
 // Error code constants re-exported from avutil

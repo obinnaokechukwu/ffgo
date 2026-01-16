@@ -4,6 +4,8 @@ package ffgo
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +44,13 @@ type DecoderOptions struct {
 
 	// FFmpeg options passed to avformat_open_input
 	AVOptions map[string]string
+
+	// Typed probing controls (mapped to avformat_open_input AVDictionary).
+	ProbeSizeBytes  int
+	AnalyzeDuration time.Duration
+	MaxProbePackets int
+	FormatWhitelist []string
+	CodecWhitelist  []string
 
 	// Streams specifies which stream types to decode (nil = all streams)
 	Streams []MediaType
@@ -84,6 +93,68 @@ func WithAVOptions(options map[string]string) DecoderOption {
 	}
 }
 
+// WithProbeSize sets the maximum probing size in bytes (FFmpeg "probesize").
+func WithProbeSize(n int) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.ProbeSizeBytes = n
+	}
+}
+
+// WithAnalyzeDuration sets the maximum analyze duration (FFmpeg "analyzeduration").
+func WithAnalyzeDuration(d time.Duration) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.AnalyzeDuration = d
+	}
+}
+
+// WithMaxProbePackets sets the maximum number of probe packets (FFmpeg "max_probe_packets").
+func WithMaxProbePackets(n int) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.MaxProbePackets = n
+	}
+}
+
+// WithFormatWhitelist sets the demuxer format whitelist (FFmpeg "format_whitelist").
+func WithFormatWhitelist(v ...string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.FormatWhitelist = v
+	}
+}
+
+// WithCodecWhitelist sets the codec whitelist (FFmpeg "codec_whitelist").
+func WithCodecWhitelist(v ...string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.CodecWhitelist = v
+	}
+}
+
+func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
+	if opts == nil {
+		return nil
+	}
+	out := make(map[string]string, len(opts.AVOptions)+8)
+	for k, v := range opts.AVOptions {
+		out[k] = v
+	}
+	// Typed fields override raw AVOptions for clarity/determinism.
+	if opts.ProbeSizeBytes > 0 {
+		out["probesize"] = strconv.Itoa(opts.ProbeSizeBytes)
+	}
+	if opts.AnalyzeDuration > 0 {
+		out["analyzeduration"] = strconv.FormatInt(opts.AnalyzeDuration.Microseconds(), 10)
+	}
+	if opts.MaxProbePackets > 0 {
+		out["max_probe_packets"] = strconv.Itoa(opts.MaxProbePackets)
+	}
+	if len(opts.FormatWhitelist) > 0 {
+		out["format_whitelist"] = strings.Join(opts.FormatWhitelist, ",")
+	}
+	if len(opts.CodecWhitelist) > 0 {
+		out["codec_whitelist"] = strings.Join(opts.CodecWhitelist, ",")
+	}
+	return out
+}
+
 // NewDecoder opens a media file for decoding.
 // Optional functional options can be passed to configure the decoder.
 func NewDecoder(path string, options ...DecoderOption) (*Decoder, error) {
@@ -108,19 +179,32 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 
 	// Build AVDictionary from options
 	var avDict avutil.Dictionary
-	if opts != nil && len(opts.AVOptions) > 0 {
-		for key, value := range opts.AVOptions {
+	for key, value := range buildDecoderAVOptions(opts) {
+		if value == "" {
+			continue
+		}
 			if err := avutil.DictSet(&avDict, key, value, 0); err != nil {
 				if avDict != nil {
 					avutil.DictFree(&avDict)
 				}
 				return nil, err
 			}
+	}
+
+	// Optional format hint
+	var inputFmt avformat.InputFormat
+	if opts != nil && opts.Format != "" {
+		inputFmt = avformat.FindInputFormat(opts.Format)
+		if inputFmt == nil {
+			if avDict != nil {
+				avutil.DictFree(&avDict)
+			}
+			return nil, errors.New("ffgo: input format not found")
 		}
 	}
 
 	// Open input file
-	if err := avformat.OpenInput(&d.formatCtx, path, nil, &avDict); err != nil {
+	if err := avformat.OpenInput(&d.formatCtx, path, inputFmt, &avDict); err != nil {
 		if avDict != nil {
 			avutil.DictFree(&avDict)
 		}

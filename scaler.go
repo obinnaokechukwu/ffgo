@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
@@ -175,6 +176,55 @@ func (s *Scaler) ScaleTo(dst, src Frame) error {
 		return avutil.NewError(ret, "sws_scale_frame")
 	}
 
+	return nil
+}
+
+// SetColorConversion configures the scaler's color range handling (limited/full).
+//
+// Note: This is a best-effort helper. If the underlying swscale build does not expose
+// colorspace detail APIs, it returns an error.
+func (s *Scaler) SetColorConversion(src, dst ColorSpec) error {
+	if s.ctx == nil {
+		return errors.New("ffgo: scaler is closed")
+	}
+	if !swscale.HasColorspaceDetails() {
+		return errors.New("ffgo: swscale colorspace details not available")
+	}
+
+	var invTable unsafe.Pointer
+	var table unsafe.Pointer
+	var srcRange int32
+	var dstRange int32
+	var brightness, contrast, saturation int32
+
+	ret := swscale.GetColorspaceDetails(s.ctx, &invTable, &srcRange, &table, &dstRange, &brightness, &contrast, &saturation)
+	if ret < 0 {
+		return avutil.NewError(ret, "sws_getColorspaceDetails")
+	}
+
+	// swscale uses 0=limited (MPEG), 1=full (JPEG)
+	mapRange := func(r ColorRange) int32 {
+		switch r {
+		case ColorRangeJPEG:
+			return 1
+		case ColorRangeMPEG:
+			return 0
+		default:
+			return -1
+		}
+	}
+
+	if v := mapRange(src.Range); v >= 0 {
+		srcRange = v
+	}
+	if v := mapRange(dst.Range); v >= 0 {
+		dstRange = v
+	}
+
+	ret = swscale.SetColorspaceDetails(s.ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
+	if ret < 0 {
+		return avutil.NewError(ret, "sws_setColorspaceDetails")
+	}
 	return nil
 }
 
