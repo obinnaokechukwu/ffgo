@@ -401,6 +401,23 @@ if err != nil {
 }
 ```
 
+HEVC (x265) is the same shape—just change the codec. In practice, prefer a container like Matroska (`.mkv`) for broad HEVC compatibility:
+
+```go
+err := ffgo.TwoPassTranscode("input.mp4", "output.mkv", &ffgo.EncoderOptions{
+    Video: &ffgo.VideoEncoderConfig{
+        Codec:       ffgo.CodecHEVC,
+        PixelFormat: ffgo.PixelFormatYUV420P,
+        Bitrate:     2_000_000,
+        GOPSize:     48,
+    },
+    PassLogFile: "/tmp/ffgo-passlog-hevc",
+})
+if err != nil {
+    return err
+}
+```
+
 ---
 
 ## Scaling and Format Conversion
