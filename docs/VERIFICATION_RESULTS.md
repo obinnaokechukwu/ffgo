@@ -121,7 +121,7 @@ All major features have test coverage in ffgo_test.go:
 - TestGenerateThumbnails ✓
 - TestGetKeyframes ✓
 - TestNewNetworkDecoder ✓
-- TestCaptureScreen ✓
+- CaptureScreen: ⚠️ environment-dependent (requires X11/Wayland/OS capture support + libavdevice); not suitable for CI unit test
 - TestImageSequence ✓
 
 ## Build Verification

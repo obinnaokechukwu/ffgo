@@ -40,7 +40,7 @@ type MuxerStream struct {
 // streamEncoder handles encoding for a muxer stream.
 type streamEncoder struct {
 	codecCtx avcodec.Context
-	packet   Packet
+	packet   avcodec.Packet
 	frame    Frame // reusable frame for format conversion if needed
 }
 
@@ -419,7 +419,7 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 
 // WritePacket writes a packet directly to a stream.
 // For copy-mode streams, timestamps should already be in the source time base.
-func (m *Muxer) WritePacket(ms *MuxerStream, packet Packet) error {
+func (m *Muxer) WritePacket(ms *MuxerStream, packet *Packet) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -432,19 +432,22 @@ func (m *Muxer) WritePacket(ms *MuxerStream, packet Packet) error {
 	if ms == nil || ms.muxer != m {
 		return errors.New("ffgo: invalid stream")
 	}
+	if packet == nil || packet.ptr == nil {
+		return errors.New("ffgo: packet cannot be nil")
+	}
 
 	// Set stream index
-	avcodec.SetPacketStreamIndex(packet, int32(ms.index))
+	avcodec.SetPacketStreamIndex(packet.ptr, int32(ms.index))
 
 	// Rescale timestamps for copy mode
 	if ms.copyMode {
 		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(ms.stream)
 		streamTb := NewRational(streamTbNum, streamTbDen)
-		avcodec.RescalePacketTS(packet, ms.timeBase, streamTb)
+		avcodec.RescalePacketTS(packet.ptr, ms.timeBase, streamTb)
 	}
 
 	// Write packet
-	return avformat.InterleavedWriteFrame(m.formatCtx, packet)
+	return avformat.InterleavedWriteFrame(m.formatCtx, packet.ptr)
 }
 
 // WriteTrailer finalizes the container.

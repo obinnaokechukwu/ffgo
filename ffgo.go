@@ -48,8 +48,18 @@ type (
 		owned bool // true if the caller owns the frame and must free it
 	}
 
-	// Packet is an encoded packet of data.
-	Packet = avcodec.Packet
+	// Packet is an encoded packet of data (AVPacket* wrapper).
+	//
+	// Ownership rules:
+	// - Packets returned from Decoder.ReadPacket() are BORROWED and MUST NOT be freed.
+	// - Packets allocated via PacketAlloc() are OWNED and must be freed via PacketFree / Packet.Free().
+	Packet struct {
+		ptr   avcodec.Packet
+		owned bool
+	}
+
+	// RawPacket is the low-level AVPacket* type (for advanced users).
+	RawPacket = avcodec.Packet
 
 	// Rational represents a rational number (fraction).
 	Rational = avutil.Rational
@@ -66,6 +76,105 @@ type (
 	// CodecID represents codec identifiers.
 	CodecID = avcodec.CodecID
 )
+
+// IsNil reports whether the packet pointer is nil.
+func (p *Packet) IsNil() bool { return p == nil || p.ptr == nil }
+
+// Raw returns the underlying AVPacket* pointer for passing into low-level APIs.
+func (p *Packet) Raw() avcodec.Packet {
+	if p == nil {
+		return nil
+	}
+	return p.ptr
+}
+
+// Free releases an owned packet.
+//
+// It returns an error if called on a borrowed packet (e.g. decoder-owned output).
+// It is safe to call Free multiple times on the same owned packet.
+func (p *Packet) Free() error {
+	if p == nil || p.ptr == nil {
+		return nil
+	}
+	if !p.owned {
+		return errors.New("ffgo: attempted to free a borrowed packet; clone/alloc it first")
+	}
+	avcodec.PacketFree(&p.ptr)
+	p.ptr = nil
+	p.owned = false
+	return nil
+}
+
+// StreamIndex returns the packet's stream index.
+func (p *Packet) StreamIndex() int {
+	if p == nil || p.ptr == nil {
+		return -1
+	}
+	return int(avcodec.GetPacketStreamIndex(p.ptr))
+}
+
+// PTS returns the packet PTS.
+func (p *Packet) PTS() int64 {
+	if p == nil || p.ptr == nil {
+		return avutil.AV_NOPTS_VALUE
+	}
+	return avcodec.GetPacketPTS(p.ptr)
+}
+
+// DTS returns the packet DTS.
+func (p *Packet) DTS() int64 {
+	if p == nil || p.ptr == nil {
+		return avutil.AV_NOPTS_VALUE
+	}
+	return avcodec.GetPacketDTS(p.ptr)
+}
+
+// Size returns the packet payload size.
+func (p *Packet) Size() int {
+	if p == nil || p.ptr == nil {
+		return 0
+	}
+	return int(avcodec.GetPacketSize(p.ptr))
+}
+
+// Pos returns the packet file position.
+func (p *Packet) Pos() int64 {
+	if p == nil || p.ptr == nil {
+		return -1
+	}
+	return avcodec.GetPacketPos(p.ptr)
+}
+
+// PacketAlloc allocates a new owned packet.
+func PacketAlloc() *Packet {
+	return &Packet{ptr: avcodec.PacketAlloc(), owned: true}
+}
+
+// PacketFree frees an owned packet and sets it to nil.
+func PacketFree(p **Packet) error {
+	if p == nil || *p == nil {
+		return nil
+	}
+	err := (*p).Free()
+	*p = nil
+	return err
+}
+
+// PacketClone creates a new owned packet referencing the same underlying buffers as src.
+func PacketClone(src *Packet) (*Packet, error) {
+	if src == nil || src.ptr == nil {
+		return nil, nil
+	}
+	dst := PacketAlloc()
+	if dst == nil || dst.ptr == nil {
+		return nil, errors.New("ffgo: failed to allocate packet")
+	}
+	if err := avcodec.PacketRef(dst.ptr, src.ptr); err != nil {
+		_ = dst.Free()
+		return nil, err
+	}
+	return dst, nil
+}
 
 // IsNil reports whether the frame pointer is nil.
 func (f Frame) IsNil() bool { return f.ptr == nil }
@@ -311,7 +420,7 @@ var (
 		OpenInput         func(ctx *avformat.FormatContext, url string, fmt avformat.InputFormat, options *avutil.Dictionary) error
 		CloseInput        func(ctx *avformat.FormatContext)
 		FindStreamInfo    func(ctx avformat.FormatContext, options *avutil.Dictionary) error
-		ReadFrame         func(ctx avformat.FormatContext, pkt Packet) error
+		ReadFrame         func(ctx avformat.FormatContext, pkt RawPacket) error
 		FindBestStream    func(ctx avformat.FormatContext, mediaType MediaType, wanted, related int32, decoder *avcodec.Codec, flags int32) int32
 		GetNumStreams     func(ctx avformat.FormatContext) int
 		GetStream         func(ctx avformat.FormatContext, index int) avformat.Stream

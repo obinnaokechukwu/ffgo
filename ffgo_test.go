@@ -1915,29 +1915,48 @@ func TestSubtitleDecoder(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewSubtitleDecoder(testFile)
+	dec, err := NewDecoder(testFile)
 	if err != nil {
-		t.Logf("Failed to create subtitle decoder (may be expected): %v", err)
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer dec.Close()
+
+	subStream := dec.SubtitleStream()
+	if subStream == nil {
+		t.Skip("No subtitle stream found")
 		return
 	}
-	defer decoder.Close()
 
-	t.Logf("Subtitle stream: %+v", decoder.StreamInfo())
+	subDec, err := NewSubtitleDecoder(subStream)
+	if err != nil {
+		t.Fatalf("Failed to create subtitle decoder: %v", err)
+	}
+	defer subDec.Close()
 
-	// Try to decode some subtitles
+	t.Logf("Subtitle stream: %+v", subDec.StreamInfo())
+
+	// Decode subtitles by reading packets from the main decoder (docs-aligned flow)
 	subCount := 0
 	for subCount < 5 {
-		sub, err := decoder.DecodeNext()
+		pkt, err := dec.ReadPacket()
 		if err != nil {
-			t.Logf("Decode error: %v", err)
+			t.Fatalf("ReadPacket failed: %v", err)
+		}
+		if pkt == nil {
 			break
 		}
-		if sub == nil {
-			t.Log("End of subtitles")
-			break
+		if pkt.StreamIndex() != dec.SubtitleStreamIndex() {
+			continue
 		}
-		subCount++
-		t.Logf("Subtitle %d: %s - %s, text: %q", subCount, sub.StartTime, sub.EndTime, sub.Text)
+
+		sub, err := subDec.Decode(pkt)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if sub != nil {
+			subCount++
+			t.Logf("Subtitle %d: %s - %s, text: %q", subCount, sub.StartTime, sub.EndTime, sub.Text)
+		}
 	}
 
 	t.Logf("Decoded %d subtitles", subCount)

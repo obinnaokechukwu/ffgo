@@ -277,14 +277,16 @@ func (d *Decoder) BitRate() int64 {
 }
 
 // ReadPacket reads the next packet from the file.
-// Returns the packet stream index and the packet.
-// When EOF is reached, returns -1 and an EOF error.
-func (d *Decoder) ReadPacket() (streamIdx int, pkt Packet, err error) {
+// Returns (nil, nil) on EOF.
+//
+// The returned packet is BORROWED (decoder-owned and internally reused).
+// Do not free it; if you need to keep it, call PacketClone().
+func (d *Decoder) ReadPacket() (*Packet, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return -1, nil, errors.New("ffgo: decoder is closed")
+		return nil, errors.New("ffgo: decoder is closed")
 	}
 
 	// Unref previous packet
@@ -292,11 +294,13 @@ func (d *Decoder) ReadPacket() (streamIdx int, pkt Packet, err error) {
 
 	// Read next packet
 	if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-		return -1, nil, err
+		if avutil.IsEOF(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	idx := int(avcodec.GetPacketStreamIndex(d.packet))
-	return idx, d.packet, nil
+	return &Packet{ptr: d.packet, owned: false}, nil
 }
 
 // OpenVideoDecoder opens a codec context for video decoding.
@@ -394,7 +398,7 @@ func (d *Decoder) OpenAudioDecoder() error {
 // DecodeVideoPacket decodes a video packet and returns the decoded frame.
 // Returns nil frame if more data is needed (EAGAIN) or on EOF.
 // The returned frame is owned by the decoder; copy it if you need to keep it.
-func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
+func (d *Decoder) DecodeVideoPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -403,7 +407,11 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 	}
 
 	// Send packet to decoder
-	if err := avcodec.SendPacket(d.videoCodecCtx, pkt); err != nil {
+	var raw avcodec.Packet
+	if pkt != nil {
+		raw = pkt.ptr
+	}
+	if err := avcodec.SendPacket(d.videoCodecCtx, raw); err != nil {
 		return Frame{}, err
 	}
 
@@ -425,7 +433,7 @@ func (d *Decoder) DecodeVideoPacket(pkt Packet) (Frame, error) {
 // Unlike DecodeVideoPacket (which returns a decoder-owned, internally reused frame),
 // this method returns a cloned frame that the caller MUST free with FrameFree.
 // Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
-func (d *Decoder) DecodeVideoPacketCopy(pkt Packet) (Frame, error) {
+func (d *Decoder) DecodeVideoPacketCopy(pkt *Packet) (Frame, error) {
 	frame, err := d.DecodeVideoPacket(pkt)
 	if err != nil || frame.IsNil() {
 		return Frame{}, err
@@ -436,7 +444,7 @@ func (d *Decoder) DecodeVideoPacketCopy(pkt Packet) (Frame, error) {
 // DecodeAudioPacket decodes an audio packet and returns the decoded frame.
 // Returns nil frame if more data is needed (EAGAIN) or on EOF.
 // The returned frame is owned by the decoder; copy it if you need to keep it.
-func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
+func (d *Decoder) DecodeAudioPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -445,7 +453,11 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 	}
 
 	// Send packet to decoder
-	if err := avcodec.SendPacket(d.audioCodecCtx, pkt); err != nil {
+	var raw avcodec.Packet
+	if pkt != nil {
+		raw = pkt.ptr
+	}
+	if err := avcodec.SendPacket(d.audioCodecCtx, raw); err != nil {
 		return Frame{}, err
 	}
 
@@ -467,7 +479,7 @@ func (d *Decoder) DecodeAudioPacket(pkt Packet) (Frame, error) {
 // Unlike DecodeAudioPacket (which returns a decoder-owned, internally reused frame),
 // this method returns a cloned frame that the caller MUST free with FrameFree.
 // Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
-func (d *Decoder) DecodeAudioPacketCopy(pkt Packet) (Frame, error) {
+func (d *Decoder) DecodeAudioPacketCopy(pkt *Packet) (Frame, error) {
 	frame, err := d.DecodeAudioPacket(pkt)
 	if err != nil || frame.IsNil() {
 		return Frame{}, err
@@ -488,21 +500,21 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 	}
 
 	for {
-		streamIdx, pkt, err := d.ReadPacket()
+		pkt, err := d.ReadPacket()
 		if err != nil {
-			if avutil.IsEOF(err) {
-				// Flush decoder
-				frame, err := d.DecodeVideoPacket(nil)
-				if err != nil || frame.IsNil() {
-					return Frame{}, err
-				}
-				return frame, nil
-			}
 			return Frame{}, err
+		}
+		if pkt == nil {
+			// EOF: Flush decoder
+			frame, err := d.DecodeVideoPacket(nil)
+			if err != nil || frame.IsNil() {
+				return Frame{}, err
+			}
+			return frame, nil
 		}
 
 		// Skip non-video packets
-		if streamIdx != d.videoStreamIdx {
+		if pkt.StreamIndex() != d.videoStreamIdx {
 			continue
 		}
 
@@ -543,21 +555,21 @@ func (d *Decoder) DecodeAudio() (Frame, error) {
 	}
 
 	for {
-		streamIdx, pkt, err := d.ReadPacket()
+		pkt, err := d.ReadPacket()
 		if err != nil {
-			if avutil.IsEOF(err) {
-				// Flush decoder
-				frame, err := d.DecodeAudioPacket(nil)
-				if err != nil || frame.IsNil() {
-					return Frame{}, err
-				}
-				return frame, nil
-			}
 			return Frame{}, err
+		}
+		if pkt == nil {
+			// EOF: Flush decoder
+			frame, err := d.DecodeAudioPacket(nil)
+			if err != nil || frame.IsNil() {
+				return Frame{}, err
+			}
+			return frame, nil
 		}
 
 		// Skip non-audio packets
-		if streamIdx != d.audioStreamIdx {
+		if pkt.StreamIndex() != d.audioStreamIdx {
 			continue
 		}
 
@@ -591,36 +603,36 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 	}
 
 	for {
-		streamIdx, pkt, err := d.ReadPacket()
+		pkt, err := d.ReadPacket()
 		if err != nil {
-			if avutil.IsEOF(err) {
-				// Flush video decoder first
-				if d.videoDecoderOpen {
-					frame, err := d.DecodeVideoPacket(nil)
-					if err != nil {
-						return nil, err
-					}
-					if !frame.IsNil() {
-						return WrapFrame(frame, MediaTypeVideo), nil
-					}
-				}
-				// Flush audio decoder
-				if d.audioDecoderOpen {
-					frame, err := d.DecodeAudioPacket(nil)
-					if err != nil {
-						return nil, err
-					}
-					if !frame.IsNil() {
-						return WrapFrame(frame, MediaTypeAudio), nil
-					}
-				}
-				return nil, nil // EOF
-			}
 			return nil, err
+		}
+		if pkt == nil {
+			// EOF: Flush video decoder first
+			if d.videoDecoderOpen {
+				frame, err := d.DecodeVideoPacket(nil)
+				if err != nil {
+					return nil, err
+				}
+				if !frame.IsNil() {
+					return WrapFrame(frame, MediaTypeVideo), nil
+				}
+			}
+			// Flush audio decoder
+			if d.audioDecoderOpen {
+				frame, err := d.DecodeAudioPacket(nil)
+				if err != nil {
+					return nil, err
+				}
+				if !frame.IsNil() {
+					return WrapFrame(frame, MediaTypeAudio), nil
+				}
+			}
+			return nil, nil // EOF
 		}
 
 		// Decode video packet
-		if streamIdx == d.videoStreamIdx && d.videoDecoderOpen {
+		if pkt.StreamIndex() == d.videoStreamIdx && d.videoDecoderOpen {
 			frame, err := d.DecodeVideoPacket(pkt)
 			if err != nil {
 				return nil, err
@@ -631,7 +643,7 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 		}
 
 		// Decode audio packet
-		if streamIdx == d.audioStreamIdx && d.audioDecoderOpen {
+		if pkt.StreamIndex() == d.audioStreamIdx && d.audioDecoderOpen {
 			frame, err := d.DecodeAudioPacket(pkt)
 			if err != nil {
 				return nil, err
