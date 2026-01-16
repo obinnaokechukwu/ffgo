@@ -90,30 +90,27 @@
 ## ⚠️ Partially Implemented / Limited
 
 ### Network Protocols
-**Status**: Works if FFmpeg supports the protocol
+**Status**: ✅ Supported (via FFmpeg)
 - Can decode from URLs (http://, rtmp://, etc.)
-- No protocol-specific configuration options
-- No streaming output helpers
-- **Workaround**: Use FFmpeg's built-in protocol handling
+- Protocol configuration is available via `NewNetworkDecoder` and `ProtocolOptions` (timeouts, reconnect, headers, TLS verify)
+- Streaming output helpers are not a primary focus (use FFmpeg muxers/protocols directly when needed)
 
 ### Format-Specific Features
-**Missing**:
-- Chapter handling (add/read chapters)
-- Attachments (embed fonts, images in MKV)
-- Multi-program streams (MPEG-TS programs)
-- Data streams (arbitrary data tracks)
+**Partially covered / missing**:
+- Multi-program streams (MPEG-TS programs) (no dedicated high-level helpers)
+- Data streams (arbitrary data tracks) (no dedicated high-level helpers)
 
 ### Concatenation/Segmentation
-**Missing**:
-- Concat demuxer support
-- HLS segment generation
-- DASH manifest creation
-- **Workaround**: Handle manually with multiple instances
+**Status**: ✅ Segmentation implemented; concat helpers missing
+- ✅ HLS segment generation (via `NewHLSSegmenter` + `Muxer.WriteHeaderWithOptions`)
+- ✅ DASH manifest/segment generation (via `NewDASHSegmenter` + `Muxer.WriteHeaderWithOptions`)
+- ❌ Concat demuxer helpers (no dedicated API)
 
 ### Color Space/Range Handling
-**Status**: Basic pixel format conversion only
-- No color space metadata handling
-- No explicit BT.601/BT.709/BT.2020 conversion
+**Status**: ✅ Basic support
+- `Frame.ColorSpec()` / `Frame.SetColorSpec()` for color metadata
+- `Scaler.SetColorConversion(...)` supports range handling (limited/full) when swscale exposes colorspace APIs
+- Explicit BT.601/BT.709/BT.2020 matrix selection is not exposed as a high-level helper
 
 ### Image Sequence Handling
 **Status**: ✅ Implemented
@@ -169,9 +166,9 @@
 | Advanced seeking | ✅ Full | Frame-accurate + thumbnails |
 | Stream copy | ✅ Full | Fast remuxing |
 | Advanced encoding | ✅ Full | Presets, CRF, profiles |
-| Network protocols | ⚠️ Partial | Via FFmpeg, no helpers |
-| Device capture | ⚠️ Partial | Requires libavdevice; ListDevices not implemented |
-| Multi-pass encoding | ❌ None | Single-pass only |
+| Network protocols | ✅ Full | `NewNetworkDecoder` + `ProtocolOptions` |
+| Device capture | ⚠️ Partial | Requires libavdevice + OS permissions (environment-dependent) |
+| Multi-pass encoding | ✅ Full | Two-pass helper (x264/x265 supported on typical builds) |
 
 ## Capability Percentages
 
@@ -182,7 +179,7 @@
 - **Streaming/live**: 50% ⚠️ (via FFmpeg protocols)
 - **Professional workflows**: 80% ✅
 
-**Overall FFmpeg capability coverage**: ~75-80%
+**Overall FFmpeg capability coverage**: ~80%+
 
 ## What Works Well in ffgo
 
@@ -201,6 +198,5 @@
 
 ## What Requires External Tools
 
-- ❌ Device capture → Use OS-specific APIs
-- ❌ Multi-pass encoding → Use CRF instead
-- ❌ HLS/DASH segmentation → Use ffmpeg CLI or muxer libraries
+- ⚠️ Device capture setup can be OS/permission dependent (FFmpeg must be built with libavdevice and the process must have permissions)
+- ❌ Concat workflows (no dedicated helpers)
