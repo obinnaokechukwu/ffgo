@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avdevice"
 	"github.com/obinnaokechukwu/ffgo/avformat"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // DeviceType represents a capture device type.
@@ -29,6 +31,20 @@ type DeviceInfo struct {
 	Name        string
 	Description string
 	DeviceType  DeviceType
+}
+
+// DeviceListOptions configures device enumeration behavior.
+type DeviceListOptions struct {
+	// InputFormat is the FFmpeg input format used for device enumeration
+	// (e.g. "v4l2", "alsa", "dshow", "avfoundation").
+	// If empty, ffgo uses platform defaults based on deviceType.
+	InputFormat string
+
+	// DeviceName is an optional selector string passed to FFmpeg.
+	DeviceName string
+
+	// AVOptions are forwarded to FFmpeg's device listing function.
+	AVOptions map[string]string
 }
 
 // CaptureConfig configures capture from a hardware device.
@@ -72,15 +88,111 @@ type CaptureConfig struct {
 // available on all platforms. Returns an error if device enumeration
 // is not supported.
 func ListDevices(deviceType DeviceType) ([]DeviceInfo, error) {
+	return ListDevicesWithOptions(deviceType, nil)
+}
+
+// ListDevicesWithOptions returns available capture devices of the specified type
+// using optional enumeration settings.
+func ListDevicesWithOptions(deviceType DeviceType, opts *DeviceListOptions) ([]DeviceInfo, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
-	// Best-effort: ensure libavdevice is available for device discovery.
+
+	// libavdevice is required (for underlying enumeration API and device demuxers)
+	if err := avdevice.Init(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAVDeviceUnavailable, err)
+	}
 	_ = avdevice.RegisterAll()
 
-	// Device enumeration is complex and platform-specific.
-	// For now, return a basic implementation that suggests using system tools.
-	return nil, errors.New("ffgo: device enumeration not implemented; use platform tools (v4l2-ctl, ffmpeg -list_devices)")
+	// The shim is required for enumeration (avoids parsing FFmpeg structs in Go).
+	_ = shim.Load()
+	if !shim.IsLoaded() {
+		return nil, ErrDeviceEnumerationUnavailable
+	}
+
+	if opts == nil {
+		opts = &DeviceListOptions{}
+	}
+	formatName := opts.InputFormat
+	if formatName == "" {
+		formatName = getInputFormat(deviceType)
+	}
+	if formatName == "" {
+		return nil, ErrDeviceEnumerationUnavailable
+	}
+
+	// Build options dictionary
+	var avDict avutil.Dictionary
+	for k, v := range opts.AVOptions {
+		if err := avutil.DictSet(&avDict, k, v, 0); err != nil {
+			if avDict != nil {
+				avutil.DictFree(&avDict)
+			}
+			return nil, err
+		}
+	}
+	defer func() {
+		if avDict != nil {
+			avutil.DictFree(&avDict)
+		}
+	}()
+
+	count, namesPtr, descsPtr, err := shim.AVDeviceListInputSources(formatName, opts.DeviceName, avDict)
+	if err != nil {
+		return nil, ErrDeviceEnumerationUnavailable
+	}
+	defer func() {
+		shim.AVDeviceFreeStringArray(namesPtr, count)
+		shim.AVDeviceFreeStringArray(descsPtr, count)
+	}()
+
+	names := cStringArrayToGo(namesPtr, count)
+	descs := cStringArrayToGo(descsPtr, count)
+
+	n := len(names)
+	if len(descs) < n {
+		n = len(descs)
+	}
+	out := make([]DeviceInfo, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, DeviceInfo{
+			Name:        names[i],
+			Description: descs[i],
+			DeviceType:  deviceType,
+		})
+	}
+	return out, nil
+}
+
+func cStringToGo(ptr unsafe.Pointer) string {
+	if ptr == nil {
+		return ""
+	}
+	// FFmpeg strings can be long; cap scanning to a reasonable limit.
+	const max = 4096
+	n := 0
+	for n < max {
+		if *(*byte)(unsafe.Add(ptr, n)) == 0 {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	return string(unsafe.Slice((*byte)(ptr), n))
+}
+
+func cStringArrayToGo(arr unsafe.Pointer, count int) []string {
+	if arr == nil || count <= 0 {
+		return nil
+	}
+	s := unsafe.Slice((*unsafe.Pointer)(arr), count)
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, cStringToGo(s[i]))
+	}
+	return out
 }
 
 // NewCapture creates a decoder that captures from a hardware device.
