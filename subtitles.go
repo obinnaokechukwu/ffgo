@@ -48,17 +48,20 @@ type Subtitle struct {
 type SubtitleRect struct {
 	X, Y          int
 	Width, Height int
-	// For bitmap subtitles, Data would contain the image data
-	// (not implemented in this version)
+	// Data contains bitmap indices for SubtitleTypeBitmap (palette-based).
+	// Length is LineSize*Height.
+	Data []byte
+	// LineSize is the number of bytes per row in Data.
+	LineSize int
+	// Palette contains BGRA palette entries (4 bytes per color), if available.
+	Palette []byte
 }
 
 // SubtitleDecoder decodes subtitles from a media file.
 type SubtitleDecoder struct {
 	mu sync.Mutex
 
-	formatCtx      avformat.FormatContext
 	codecCtx       avcodec.Context
-	packet         avcodec.Packet
 	subtitleStreamIdx int
 	streamInfo     *StreamInfo
 
@@ -69,98 +72,99 @@ type SubtitleDecoder struct {
 }
 
 // NewSubtitleDecoder creates a decoder for subtitle streams.
-func NewSubtitleDecoder(inputPath string) (*SubtitleDecoder, error) {
+//
+// The stream should come from Decoder.SubtitleStream().
+func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
 
-	// Open input
-	var formatCtx avformat.FormatContext
-	if err := avformat.OpenInput(&formatCtx, inputPath, nil, nil); err != nil {
-		return nil, err
+	if stream == nil {
+		return nil, errors.New("ffgo: subtitle stream cannot be nil")
 	}
-
-	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
-		avformat.CloseInput(&formatCtx)
-		return nil, err
+	if stream.Type != MediaTypeSubtitle {
+		return nil, errors.New("ffgo: stream is not a subtitle stream")
 	}
-
-	// Find subtitle stream
-	subtitleStreamIdx := avformat.FindBestStream(formatCtx, avutil.MediaTypeSubtitle, -1, -1, nil, 0)
-	if subtitleStreamIdx < 0 {
-		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: no subtitle stream found")
+	codecPar := stream.CodecParameters()
+	if codecPar == nil {
+		return nil, errors.New("ffgo: subtitle stream codec parameters are not available")
 	}
-
-	// Get codec info
-	stream := avformat.GetStream(formatCtx, int(subtitleStreamIdx))
-	codecPar := avformat.GetStreamCodecPar(stream)
 	codecID := avformat.GetCodecParCodecID(codecPar)
 
 	// Find decoder
 	decoder := avcodec.FindDecoder(codecID)
 	if decoder == nil {
-		avformat.CloseInput(&formatCtx)
 		return nil, errors.New("ffgo: subtitle decoder not found")
 	}
 
 	// Allocate codec context
 	codecCtx := avcodec.AllocContext3(decoder)
 	if codecCtx == nil {
-		avformat.CloseInput(&formatCtx)
 		return nil, errors.New("ffgo: failed to allocate codec context")
 	}
 
 	// Copy parameters
 	if err := avcodec.ParametersToContext(codecCtx, codecPar); err != nil {
 		avcodec.FreeContext(&codecCtx)
-		avformat.CloseInput(&formatCtx)
 		return nil, err
 	}
 
 	// Open decoder
 	if err := avcodec.Open2(codecCtx, decoder, nil); err != nil {
 		avcodec.FreeContext(&codecCtx)
-		avformat.CloseInput(&formatCtx)
 		return nil, err
-	}
-
-	// Allocate packet
-	packet := avcodec.PacketAlloc()
-	if packet == nil {
-		avcodec.Close(codecCtx)
-		avcodec.FreeContext(&codecCtx)
-		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: failed to allocate packet")
 	}
 
 	// Allocate AVSubtitle struct (32 bytes)
 	subtitle := avutil.Malloc(32)
 	if subtitle == nil {
-		avcodec.PacketFree(&packet)
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
-		avformat.CloseInput(&formatCtx)
 		return nil, errors.New("ffgo: failed to allocate subtitle struct")
 	}
 
-	// Get stream info
-	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-	streamInfo := &StreamInfo{
-		Index:   int(subtitleStreamIdx),
-		Type:    MediaTypeSubtitle,
-		CodecID: CodecID(codecID),
-		TimeBase: Rational{Num: tbNum, Den: tbDen},
-	}
-
 	return &SubtitleDecoder{
-		formatCtx:         formatCtx,
 		codecCtx:          codecCtx,
-		packet:            packet,
-		subtitleStreamIdx: int(subtitleStreamIdx),
-		streamInfo:        streamInfo,
+		subtitleStreamIdx: stream.Index,
+		streamInfo:        stream,
 		subtitle:          subtitle,
 	}, nil
+}
+
+// NewSubtitleDecoderFromFile is a convenience that opens a file and selects its best subtitle stream.
+// Deprecated: prefer using Decoder + NewSubtitleDecoder(decoder.SubtitleStream()) as documented.
+func NewSubtitleDecoderFromFile(inputPath string) (*SubtitleDecoder, error) {
+	if err := bindings.Load(); err != nil {
+		return nil, err
+	}
+
+	var formatCtx avformat.FormatContext
+	if err := avformat.OpenInput(&formatCtx, inputPath, nil, nil); err != nil {
+		return nil, err
+	}
+	defer avformat.CloseInput(&formatCtx)
+
+	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
+		return nil, err
+	}
+
+	subIdx := avformat.FindBestStream(formatCtx, avutil.MediaTypeSubtitle, -1, -1, nil, 0)
+	if subIdx < 0 {
+		return nil, errors.New("ffgo: no subtitle stream found")
+	}
+
+	// Build a minimal StreamInfo with codec parameters so NewSubtitleDecoder can work.
+	stream := avformat.GetStream(formatCtx, int(subIdx))
+	codecPar := avformat.GetStreamCodecPar(stream)
+	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+	si := &StreamInfo{
+		Index:    int(subIdx),
+		Type:     MediaTypeSubtitle,
+		CodecID:  CodecID(avformat.GetCodecParCodecID(codecPar)),
+		TimeBase: Rational{Num: tbNum, Den: tbDen},
+		codecPar: codecPar,
+	}
+	return NewSubtitleDecoder(si)
 }
 
 // StreamInfo returns information about the subtitle stream.
@@ -168,9 +172,9 @@ func (d *SubtitleDecoder) StreamInfo() *StreamInfo {
 	return d.streamInfo
 }
 
-// DecodeNext decodes the next subtitle.
-// Returns nil, nil when there are no more subtitles.
-func (d *SubtitleDecoder) DecodeNext() (*Subtitle, error) {
+// Decode decodes a subtitle from a packet.
+// Returns (nil, nil) if no subtitle was decoded from this packet.
+func (d *SubtitleDecoder) Decode(packet *Packet) (*Subtitle, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -178,43 +182,18 @@ func (d *SubtitleDecoder) DecodeNext() (*Subtitle, error) {
 		return nil, errors.New("ffgo: decoder is closed")
 	}
 
-	for {
-		// Read packet
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-			if avutil.IsEOF(err) {
-				return nil, nil // End of file
-			}
-			return nil, err
-		}
-
-		// Check if it's our subtitle stream
-		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
-		if int(streamIdx) != d.subtitleStreamIdx {
-			avcodec.PacketUnref(d.packet)
-			continue
-		}
-
-		// Decode subtitle
-		sub, err := d.decodeSubtitlePacket()
-		avcodec.PacketUnref(d.packet)
-
-		if err != nil {
-			return nil, err
-		}
-		if sub != nil {
-			return sub, nil
-		}
-		// No subtitle decoded (maybe need more packets), continue
+	if packet == nil || packet.ptr == nil {
+		return nil, nil
 	}
-}
+	if packet.StreamIndex() != d.subtitleStreamIdx {
+		return nil, nil
+	}
 
-// decodeSubtitlePacket decodes a subtitle from the current packet.
-func (d *SubtitleDecoder) decodeSubtitlePacket() (*Subtitle, error) {
 	// Clear the subtitle struct
 	clearSubtitle(d.subtitle)
 
 	// Decode subtitle using avcodec_decode_subtitle2
-	gotSub, err := avcodec.DecodeSubtitle2(d.codecCtx, d.subtitle, d.packet)
+	gotSub, err := avcodec.DecodeSubtitle2(d.codecCtx, d.subtitle, packet.ptr)
 	if err != nil {
 		return nil, err
 	}
@@ -231,24 +210,6 @@ func (d *SubtitleDecoder) decodeSubtitlePacket() (*Subtitle, error) {
 	return sub, nil
 }
 
-// Seek seeks to a position in the file.
-func (d *SubtitleDecoder) Seek(ts time.Duration) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.closed {
-		return errors.New("ffgo: decoder is closed")
-	}
-
-	timestamp := ts.Microseconds()
-	if err := avformat.SeekFrame(d.formatCtx, -1, timestamp, avformat.SeekFlagBackward); err != nil {
-		return err
-	}
-
-	avcodec.FlushBuffers(d.codecCtx)
-	return nil
-}
-
 // Close releases all resources.
 func (d *SubtitleDecoder) Close() error {
 	d.mu.Lock()
@@ -262,15 +223,9 @@ func (d *SubtitleDecoder) Close() error {
 	if d.subtitle != nil {
 		avutil.Free(d.subtitle)
 	}
-	if d.packet != nil {
-		avcodec.PacketFree(&d.packet)
-	}
 	if d.codecCtx != nil {
 		avcodec.Close(d.codecCtx)
 		avcodec.FreeContext(&d.codecCtx)
-	}
-	if d.formatCtx != nil {
-		avformat.CloseInput(&d.formatCtx)
 	}
 
 	return nil
@@ -293,6 +248,9 @@ const (
 	offsetRectW        = 8  // int w
 	offsetRectH        = 12 // int h
 	offsetRectNbColors = 16 // int nb_colors
+	offsetRectData0    = 24 // uint8_t *data[0]
+	offsetRectData1    = 32 // uint8_t *data[1] (palette)
+	offsetRectLinesize0 = 56 // int linesize[0]
 	offsetRectType     = 72 // enum AVSubtitleType type
 	offsetRectText     = 80 // char *text
 	offsetRectASS      = 88 // char *ass
@@ -364,11 +322,39 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 			y := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectY))
 			w := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectW))
 			h := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectH))
+			ls0 := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectLinesize0))
+
+			var data []byte
+			if w > 0 && h > 0 && ls0 > 0 {
+				dataPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectData0))
+				// Copy bitmap indices: linesize*height bytes
+				if dataPtr != nil {
+					n := int(ls0) * int(h)
+					// Safety cap to avoid runaway allocations on corrupt files.
+					if n > 0 && n <= 64*1024*1024 {
+						data = make([]byte, n)
+						copy(data, unsafe.Slice((*byte)(dataPtr), n))
+					}
+				}
+			}
+
+			var palette []byte
+			palPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectData1))
+			nbColors := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectNbColors))
+			if palPtr != nil && nbColors > 0 && nbColors <= 256 {
+				n := int(nbColors) * 4
+				palette = make([]byte, n)
+				copy(palette, unsafe.Slice((*byte)(palPtr), n))
+			}
+
 			result.Rects = append(result.Rects, SubtitleRect{
-				X:      int(x),
-				Y:      int(y),
-				Width:  int(w),
-				Height: int(h),
+				X:        int(x),
+				Y:        int(y),
+				Width:    int(w),
+				Height:   int(h),
+				Data:     data,
+				LineSize: int(ls0),
+				Palette:  palette,
 			})
 		}
 	}
@@ -420,15 +406,18 @@ func (d *Decoder) SubtitleStream() *StreamInfo {
 		codecPar := avformat.GetStreamCodecPar(stream)
 		mediaType := avformat.GetCodecParType(codecPar)
 		if mediaType == avutil.MediaTypeSubtitle {
-			codecID := avformat.GetCodecParCodecID(codecPar)
-			tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-			return &StreamInfo{
-				Index:    i,
-				Type:     MediaTypeSubtitle,
-				CodecID:  CodecID(codecID),
-				TimeBase: Rational{Num: tbNum, Den: tbDen},
-			}
+			// Use the shared stream info extractor to ensure codec parameters are present.
+			return d.getStreamInfo(i)
 		}
 	}
 	return nil
+}
+
+// SubtitleStreamIndex returns the index of the first subtitle stream, or -1 if none.
+func (d *Decoder) SubtitleStreamIndex() int {
+	s := d.SubtitleStream()
+	if s == nil {
+		return -1
+	}
+	return s.Index
 }

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/obinnaokechukwu/ffgo/avdevice"
 	"github.com/obinnaokechukwu/ffgo/avformat"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
@@ -74,6 +75,8 @@ func ListDevices(deviceType DeviceType) ([]DeviceInfo, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
+	// Best-effort: ensure libavdevice is available for device discovery.
+	_ = avdevice.RegisterAll()
 
 	// Device enumeration is complex and platform-specific.
 	// For now, return a basic implementation that suggests using system tools.
@@ -102,6 +105,9 @@ func ListDevices(deviceType DeviceType) ([]DeviceInfo, error) {
 func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
+	}
+	if err := avdevice.RegisterAll(); err != nil {
+		return nil, fmt.Errorf("ffgo: device capture requires libavdevice: %w", err)
 	}
 
 	if cfg.Device == "" {
@@ -361,6 +367,9 @@ type ScreenCaptureOptions struct {
 func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
+	}
+	if err := avdevice.RegisterAll(); err != nil {
+		return nil, fmt.Errorf("ffgo: screen capture requires libavdevice: %w", err)
 	}
 
 	display := opts.Display

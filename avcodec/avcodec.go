@@ -383,6 +383,7 @@ const (
 	offsetPacketSize        = 32 // int size
 	offsetPacketStreamIndex = 36 // int stream_index
 	offsetPacketFlags       = 40 // int flags
+	offsetPacketDuration    = 64 // int64 duration
 	offsetPacketPos         = 72 // int64 pos
 )
 
@@ -457,6 +458,22 @@ func GetPacketPos(pkt Packet) int64 {
 		return -1
 	}
 	return *(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketPos))
+}
+
+// GetPacketDuration returns the packet duration (in stream time_base units).
+func GetPacketDuration(pkt Packet) int64 {
+	if pkt == nil {
+		return 0
+	}
+	return *(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketDuration))
+}
+
+// SetPacketDuration sets the packet duration (in stream time_base units).
+func SetPacketDuration(pkt Packet, dur int64) {
+	if pkt == nil {
+		return
+	}
+	*(*int64)(unsafe.Pointer(uintptr(pkt) + offsetPacketDuration)) = dur
 }
 
 // SetPacketPos sets the byte position in stream.
@@ -758,6 +775,7 @@ func RescalePacketTS(pkt Packet, srcTb, dstTb avutil.Rational) {
 
 	pts := GetPacketPTS(pkt)
 	dts := GetPacketDTS(pkt)
+	dur := GetPacketDuration(pkt)
 
 	// Rescale PTS if valid
 	if pts != avutil.AV_NOPTS_VALUE {
@@ -771,7 +789,11 @@ func RescalePacketTS(pkt Packet, srcTb, dstTb avutil.Rational) {
 		SetPacketDTS(pkt, dts)
 	}
 
-	// TODO: Also rescale duration if needed
+	// Rescale duration (0 is a common "unknown" value, keep it as-is)
+	if dur > 0 {
+		dur = rescaleQ(dur, srcTb, dstTb)
+		SetPacketDuration(pkt, dur)
+	}
 }
 
 // rescaleQ rescales a value from one time base to another.

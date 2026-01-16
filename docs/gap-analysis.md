@@ -116,28 +116,23 @@
 - No explicit BT.601/BT.709/BT.2020 conversion
 
 ### Image Sequence Handling
-**Status**: Single image decode/encode works
-- No image sequence file pattern support (img%03d.png)
-- No explicit frame timing for image sequences
+**Status**: ✅ Implemented
+- Supports printf-style sequence patterns (e.g. `frame_%04d.png`) via `image2`
+- Supports frame timing via the `framerate` option
 
 ## ❌ Not Implemented
 
 ### Device Input/Output (avdevice)
 **FFmpeg capability**: Capture from devices
 - Camera capture (V4L2, AVFoundation, DirectShow)
-- Screen capture
+- Screen capture (x11grab/gdigrab/etc.)
 - Audio device input
-- Real-time device streaming
 
-**ffgo status**: NOT implemented
-- No `avdevice/` package
-- No device enumeration
-- **Workaround**: Use OS-specific APIs separately
-
-**Use cases blocked**:
-- Webcam recording
-- Screen recording
-- Live capture applications
+**ffgo status**: ⚠️ Partially implemented
+- ✅ `NewCapture` / `CaptureScreen` exist and use FFmpeg device demuxers
+- ✅ Automatically loads `libavdevice` when capture APIs are used
+- ❌ `ListDevices` is not implemented (returns an explicit error)
+- ⚠️ Capture is environment-dependent (requires FFmpeg built with device support + OS permissions)
 
 ### Multi-Pass Encoding
 **FFmpeg capability**: Two-pass VBR for optimal quality/size
@@ -176,7 +171,7 @@
 | Stream copy | ✅ Full | Fast remuxing |
 | Advanced encoding | ✅ Full | Presets, CRF, profiles |
 | Network protocols | ⚠️ Partial | Via FFmpeg, no helpers |
-| Device capture | ❌ None | Needs avdevice |
+| Device capture | ⚠️ Partial | Requires libavdevice; ListDevices not implemented |
 | Multi-pass encoding | ❌ None | Single-pass only |
 
 ## Capability Percentages

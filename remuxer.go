@@ -237,20 +237,18 @@ func (r *Remuxer) Remux(decoder *Decoder) error {
 	}
 
 	for {
-		streamIdx, pkt, err := decoder.ReadPacket()
+		pkt, err := decoder.ReadPacket()
 		if err != nil {
-			if avutil.IsEOF(err) {
-				break
-			}
 			return err
 		}
-
-		if err := r.WritePacket(pkt, streamIdx); err != nil {
-			avcodec.PacketUnref(pkt)
-			return err
+		if pkt == nil {
+			break
 		}
 
-		avcodec.PacketUnref(pkt)
+		streamIdx := pkt.StreamIndex()
+		if err := r.WritePacket(pkt.ptr, streamIdx); err != nil {
+			return err
+		}
 	}
 
 	return nil

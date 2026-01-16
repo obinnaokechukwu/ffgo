@@ -636,7 +636,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 // The packet's stream index should match the source stream.
 // For video packets, set streamIndex to match the source video stream.
 // For audio packets, set streamIndex to match the source audio stream.
-func (e *Encoder) WritePacket(packet Packet) error {
+func (e *Encoder) WritePacket(packet *Packet) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -648,6 +648,10 @@ func (e *Encoder) WritePacket(packet Packet) error {
 		return errors.New("ffgo: WritePacket only available in stream copy mode")
 	}
 
+	if packet == nil || packet.ptr == nil {
+		return errors.New("ffgo: packet cannot be nil")
+	}
+
 	// Write header if not yet written
 	if !e.headerWritten {
 		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
@@ -657,7 +661,7 @@ func (e *Encoder) WritePacket(packet Packet) error {
 	}
 
 	// Determine output stream index based on packet media type
-	packetStreamIdx := avcodec.GetPacketStreamIndex(packet)
+	packetStreamIdx := avcodec.GetPacketStreamIndex(packet.ptr)
 
 	var outputStreamIdx int
 	var srcTimeBase, dstTimeBase Rational
@@ -683,13 +687,13 @@ func (e *Encoder) WritePacket(packet Packet) error {
 	}
 
 	// Rescale timestamps
-	avcodec.RescalePacketTS(packet, srcTimeBase, dstTimeBase)
+	avcodec.RescalePacketTS(packet.ptr, srcTimeBase, dstTimeBase)
 
 	// Set output stream index
-	avcodec.SetPacketStreamIndex(packet, int32(outputStreamIdx))
+	avcodec.SetPacketStreamIndex(packet.ptr, int32(outputStreamIdx))
 
 	// Write packet
-	return avformat.InterleavedWriteFrame(e.formatCtx, packet)
+	return avformat.InterleavedWriteFrame(e.formatCtx, packet.ptr)
 }
 
 // applyVideoOptions applies advanced video encoding options via av_opt_set.
