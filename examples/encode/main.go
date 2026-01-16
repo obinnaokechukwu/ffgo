@@ -10,10 +10,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo"
-	"github.com/obinnaokechukwu/ffgo/avutil"
 )
 
 func main() {
@@ -64,11 +62,11 @@ func main() {
 
 	// Allocate frame
 	frame := ffgo.FrameAlloc()
-	if frame == nil {
+	if frame.IsNil() {
 		fmt.Fprintf(os.Stderr, "Failed to allocate frame\n")
 		os.Exit(1)
 	}
-	defer ffgo.FrameFree(&frame)
+	defer func() { _ = ffgo.FrameFree(&frame) }()
 
 	// Set up frame
 	ffgo.AVUtil.SetFrameWidth(frame, int32(width))
@@ -127,32 +125,37 @@ func main() {
 
 // fillTestPattern fills a YUV420P frame with an animated test pattern
 func fillTestPattern(frame ffgo.Frame, frameNum, width, height int) {
-	// Get data pointers
-	data := avutil.GetFrameData(frame)
-	linesize := avutil.GetFrameLinesize(frame)
+	fw := ffgo.WrapFrame(frame, ffgo.MediaTypeVideo)
+	if fw == nil {
+		return
+	}
+	yPlane := fw.Data(0)
+	uPlane := fw.Data(1)
+	vPlane := fw.Data(2)
+	yStride := fw.Linesize(0)
+	uStride := fw.Linesize(1)
+	vStride := fw.Linesize(2)
 
 	// Y plane - animated gradient
-	if data[0] != nil {
-		yPlane := (*[1 << 24]byte)(unsafe.Pointer(data[0]))
-		t := float64(frameNum) * 0.1
+	t := float64(frameNum) * 0.1
 
-		for y := 0; y < height; y++ {
-			for x := 0; x < width; x++ {
-				// Moving diagonal bars
-				fx := float64(x) / float64(width)
-				fy := float64(y) / float64(height)
+	for y := 0; y < height; y++ {
+		row := y * yStride
+		for x := 0; x < width; x++ {
+			// Moving diagonal bars
+			fx := float64(x) / float64(width)
+			fy := float64(y) / float64(height)
 
-				// Create animated pattern
-				pattern := (fx + fy + t) * 3.0
-				val := byte(int(pattern*255) % 256)
+			// Create animated pattern
+			pattern := (fx + fy + t) * 3.0
+			val := byte(int(pattern*255) % 256)
 
-				// Add some brightness variation
-				if int(pattern)%2 == 0 {
-					val = 255 - val
-				}
-
-				yPlane[y*int(linesize[0])+x] = val
+			// Add some brightness variation
+			if int(pattern)%2 == 0 {
+				val = 255 - val
 			}
+
+			yPlane[row+x] = val
 		}
 	}
 
@@ -161,26 +164,22 @@ func fillTestPattern(frame ffgo.Frame, frameNum, width, height int) {
 	uvWidth := width / 2
 
 	// U plane - subtle color variation
-	if data[1] != nil {
-		uPlane := (*[1 << 24]byte)(unsafe.Pointer(data[1]))
-		for y := 0; y < uvHeight; y++ {
-			for x := 0; x < uvWidth; x++ {
-				// Subtle hue shift
-				val := byte(128 + int(float64(frameNum)*0.5)%50 - 25)
-				uPlane[y*int(linesize[1])+x] = val
-			}
+	for y := 0; y < uvHeight; y++ {
+		row := y * uStride
+		for x := 0; x < uvWidth; x++ {
+			// Subtle hue shift
+			val := byte(128 + int(float64(frameNum)*0.5)%50 - 25)
+			uPlane[row+x] = val
 		}
 	}
 
 	// V plane - subtle color variation
-	if data[2] != nil {
-		vPlane := (*[1 << 24]byte)(unsafe.Pointer(data[2]))
-		for y := 0; y < uvHeight; y++ {
-			for x := 0; x < uvWidth; x++ {
-				// Subtle hue shift (opposite direction)
-				val := byte(128 - int(float64(frameNum)*0.5)%50 + 25)
-				vPlane[y*int(linesize[2])+x] = val
-			}
+	for y := 0; y < uvHeight; y++ {
+		row := y * vStride
+		for x := 0; x < uvWidth; x++ {
+			// Subtle hue shift (opposite direction)
+			val := byte(128 - int(float64(frameNum)*0.5)%50 + 25)
+			vPlane[row+x] = val
 		}
 	}
 }

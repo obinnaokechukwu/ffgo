@@ -115,7 +115,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Decode error: %v\n", err)
 			os.Exit(1)
 		}
-		if frame == nil {
+		if frame.IsNil() {
 			break // EOF
 		}
 

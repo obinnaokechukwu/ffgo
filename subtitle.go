@@ -140,24 +140,30 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 
 // Render burns the subtitle at the current frame's PTS onto the frame.
 // The frame must have valid PTS for correct subtitle timing.
+//
 // Returns a new frame with subtitles burned in. The returned frame is owned
-// by the renderer and will be reused on the next call.
+// by the caller and must be freed.
 func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 	if r.graph == nil {
-		return nil, errors.New("ffgo: subtitle renderer is closed")
+		return Frame{}, errors.New("ffgo: subtitle renderer is closed")
 	}
 
 	frames, err := r.graph.Filter(&frame)
 	if err != nil {
-		return nil, err
+		return Frame{}, err
 	}
 
 	if len(frames) == 0 {
-		return nil, errors.New("ffgo: no output frame from subtitle filter")
+		return Frame{}, errors.New("ffgo: no output frame from subtitle filter")
 	}
 
-	// Return the first frame (subtitles filter outputs one frame per input)
-	return *frames[0], nil
+	// Return the first frame (subtitles filter outputs one frame per input).
+	// The returned frame is owned by the caller and must be freed.
+	out := *frames[0]
+	for i := 1; i < len(frames); i++ {
+		_ = frames[i].Free()
+	}
+	return out, nil
 }
 
 // Close releases all resources.

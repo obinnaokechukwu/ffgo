@@ -10,6 +10,8 @@
 package ffgo
 
 import (
+	"errors"
+
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avformat"
 	"github.com/obinnaokechukwu/ffgo/avutil"
@@ -36,7 +38,15 @@ func Version() (avutil, avcodec, avformat uint32) {
 // Re-export common types for convenience
 type (
 	// Frame is a decoded video or audio frame.
-	Frame = avutil.Frame
+	//
+	// Safety note:
+	// ffgo.Frame is a small wrapper around an FFmpeg AVFrame pointer that tracks ownership.
+	// Some APIs return borrowed frames (e.g. decoder output) which MUST NOT be freed.
+	// If you need an owned frame, clone it with FrameClone / Frame.Clone.
+	Frame struct {
+		ptr   avutil.Frame
+		owned bool // true if the caller owns the frame and must free it
+	}
 
 	// Packet is an encoded packet of data.
 	Packet = avcodec.Packet
@@ -56,6 +66,30 @@ type (
 	// CodecID represents codec identifiers.
 	CodecID = avcodec.CodecID
 )
+
+// IsNil reports whether the frame pointer is nil.
+func (f Frame) IsNil() bool { return f.ptr == nil }
+
+// Clone returns an owned frame that references the same underlying buffers as f.
+// The returned frame MUST be freed by the caller (via Frame.Free / FrameFree).
+func (f Frame) Clone() (Frame, error) { return FrameClone(f) }
+
+// Free releases an owned frame.
+//
+// It returns an error if called on a borrowed frame (e.g. decoder-owned output).
+// It is safe to call Free multiple times on the same owned frame.
+func (f *Frame) Free() error {
+	if f == nil || f.ptr == nil {
+		return nil
+	}
+	if !f.owned {
+		return errors.New("ffgo: attempted to free a borrowed frame; clone it first")
+	}
+	avutil.FrameFree(&f.ptr)
+	f.ptr = nil
+	f.owned = false
+	return nil
+}
 
 // Re-export common constants
 const (
@@ -157,10 +191,10 @@ type FrameInfo struct {
 // GetFrameInfo returns information about a frame.
 func GetFrameInfo(frame Frame) FrameInfo {
 	return FrameInfo{
-		Width:  int(avutil.GetFrameWidth(frame)),
-		Height: int(avutil.GetFrameHeight(frame)),
-		Format: avutil.GetFrameFormat(frame),
-		PTS:    avutil.GetFramePTS(frame),
+		Width:  int(avutil.GetFrameWidth(frame.ptr)),
+		Height: int(avutil.GetFrameHeight(frame.ptr)),
+		Format: avutil.GetFrameFormat(frame.ptr),
+		PTS:    avutil.GetFramePTS(frame.ptr),
 	}
 }
 
@@ -171,22 +205,56 @@ func NewRational(num, den int32) Rational {
 
 // FrameAlloc allocates a new frame.
 func FrameAlloc() Frame {
-	return avutil.FrameAlloc()
+	return Frame{ptr: avutil.FrameAlloc(), owned: true}
 }
 
-// FrameFree frees a frame.
-func FrameFree(frame *Frame) {
-	avutil.FrameFree(frame)
+// FrameFree frees an owned frame and sets it to nil.
+//
+// Important: only call FrameFree on frames you OWN, e.g.:
+// - frames you allocated with FrameAlloc()
+// - frames returned by APIs that explicitly say "caller must free"
+// - frames returned from FrameClone / FrameWrapper.Copy / HWDecoder.TransferToSystem
+//
+// Do NOT call FrameFree on decoder-owned frames returned from Decoder.Decode* / Decoder.ReadFrame,
+// which are reused internally by the decoder. If you need to keep a decoder frame, call FrameClone
+// (or FrameWrapper.Copy) and free the clone instead.
+func FrameFree(frame *Frame) error {
+	if frame == nil {
+		return nil
+	}
+	return frame.Free()
 }
 
 // FrameRef creates a reference to src in dst.
 func FrameRef(dst, src Frame) error {
-	return avutil.FrameRef(dst, src)
+	if dst.ptr == nil || src.ptr == nil {
+		return errors.New("ffgo: FrameRef requires non-nil src and dst")
+	}
+	return avutil.FrameRef(dst.ptr, src.ptr)
+}
+
+// FrameClone creates a new frame that references the same underlying buffers as src.
+//
+// The returned frame is owned by the caller and must be freed with FrameFree.
+// If src is nil, it returns (nil, nil).
+func FrameClone(src Frame) (Frame, error) {
+	if src.ptr == nil {
+		return Frame{}, nil
+	}
+	dst := avutil.FrameAlloc()
+	if dst == nil {
+		return Frame{}, ErrOutOfMemory
+	}
+	if err := avutil.FrameRef(dst, src.ptr); err != nil {
+		avutil.FrameFree(&dst)
+		return Frame{}, err
+	}
+	return Frame{ptr: dst, owned: true}, nil
 }
 
 // FrameUnref unreferences a frame's buffers.
 func FrameUnref(frame Frame) {
-	avutil.FrameUnref(frame)
+	avutil.FrameUnref(frame.ptr)
 }
 
 // Error helpers
@@ -206,7 +274,7 @@ var (
 	// AVUtil provides access to avutil package functions.
 	AVUtil = struct {
 		FrameAlloc        func() Frame
-		FrameFree         func(frame *Frame)
+		FrameFree         func(frame *Frame) error
 		FrameRef          func(dst, src Frame) error
 		FrameUnref        func(frame Frame)
 		FrameGetBuffer    func(frame Frame, align int32) error
@@ -218,38 +286,44 @@ var (
 		SetFrameHeight    func(frame Frame, height int32)
 		SetFrameFormat    func(frame Frame, format int32)
 	}{
-		FrameAlloc:        avutil.FrameAlloc,
-		FrameFree:         avutil.FrameFree,
-		FrameRef:          avutil.FrameRef,
-		FrameUnref:        avutil.FrameUnref,
-		FrameGetBuffer:    avutil.FrameGetBufferErr,
-		FrameMakeWritable: avutil.FrameMakeWritable,
-		GetFrameWidth:     avutil.GetFrameWidth,
-		GetFrameHeight:    avutil.GetFrameHeight,
-		GetFrameFormat:    avutil.GetFrameFormat,
-		SetFrameWidth:     avutil.SetFrameWidth,
-		SetFrameHeight:    avutil.SetFrameHeight,
-		SetFrameFormat:    avutil.SetFrameFormat,
+		FrameAlloc: FrameAlloc,
+		FrameFree:  FrameFree,
+		FrameRef:   FrameRef,
+		FrameUnref: FrameUnref,
+		FrameGetBuffer: func(frame Frame, align int32) error {
+			return avutil.FrameGetBufferErr(frame.ptr, align)
+		},
+		FrameMakeWritable: func(frame Frame) error {
+			return avutil.FrameMakeWritable(frame.ptr)
+		},
+		GetFrameWidth: func(frame Frame) int32 { return avutil.GetFrameWidth(frame.ptr) },
+		GetFrameHeight: func(frame Frame) int32 {
+			return avutil.GetFrameHeight(frame.ptr)
+		},
+		GetFrameFormat: func(frame Frame) int32 { return avutil.GetFrameFormat(frame.ptr) },
+		SetFrameWidth:  func(frame Frame, width int32) { avutil.SetFrameWidth(frame.ptr, width) },
+		SetFrameHeight: func(frame Frame, height int32) { avutil.SetFrameHeight(frame.ptr, height) },
+		SetFrameFormat: func(frame Frame, format int32) { avutil.SetFrameFormat(frame.ptr, format) },
 	}
 
 	// AVFormat provides access to avformat package functions.
 	AVFormat = struct {
-		OpenInput       func(ctx *avformat.FormatContext, url string, fmt avformat.InputFormat, options *avutil.Dictionary) error
-		CloseInput      func(ctx *avformat.FormatContext)
-		FindStreamInfo  func(ctx avformat.FormatContext, options *avutil.Dictionary) error
-		ReadFrame       func(ctx avformat.FormatContext, pkt Packet) error
-		FindBestStream  func(ctx avformat.FormatContext, mediaType MediaType, wanted, related int32, decoder *avcodec.Codec, flags int32) int32
-		GetNumStreams   func(ctx avformat.FormatContext) int
-		GetStream       func(ctx avformat.FormatContext, index int) avformat.Stream
+		OpenInput         func(ctx *avformat.FormatContext, url string, fmt avformat.InputFormat, options *avutil.Dictionary) error
+		CloseInput        func(ctx *avformat.FormatContext)
+		FindStreamInfo    func(ctx avformat.FormatContext, options *avutil.Dictionary) error
+		ReadFrame         func(ctx avformat.FormatContext, pkt Packet) error
+		FindBestStream    func(ctx avformat.FormatContext, mediaType MediaType, wanted, related int32, decoder *avcodec.Codec, flags int32) int32
+		GetNumStreams     func(ctx avformat.FormatContext) int
+		GetStream         func(ctx avformat.FormatContext, index int) avformat.Stream
 		GetStreamCodecPar func(stream avformat.Stream) avcodec.Parameters
 	}{
-		OpenInput:       avformat.OpenInput,
-		CloseInput:      avformat.CloseInput,
-		FindStreamInfo:  avformat.FindStreamInfo,
-		ReadFrame:       avformat.ReadFrame,
-		FindBestStream:  avformat.FindBestStream,
-		GetNumStreams:   avformat.GetNumStreams,
-		GetStream:       avformat.GetStream,
+		OpenInput:         avformat.OpenInput,
+		CloseInput:        avformat.CloseInput,
+		FindStreamInfo:    avformat.FindStreamInfo,
+		ReadFrame:         avformat.ReadFrame,
+		FindBestStream:    avformat.FindBestStream,
+		GetNumStreams:     avformat.GetNumStreams,
+		GetStream:         avformat.GetStream,
 		GetStreamCodecPar: avformat.GetStreamCodecPar,
 	}
 )

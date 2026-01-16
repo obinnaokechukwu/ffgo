@@ -17,7 +17,7 @@ type FrameWrapper struct {
 
 // WrapFrame creates a FrameWrapper from a raw Frame.
 func WrapFrame(frame Frame, mediaType MediaType) *FrameWrapper {
-	if frame == nil {
+	if frame.IsNil() {
 		return nil
 	}
 	return &FrameWrapper{
@@ -33,10 +33,10 @@ func (f *FrameWrapper) Raw() Frame {
 
 // PTS returns the presentation timestamp of the frame.
 func (f *FrameWrapper) PTS() int64 {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return avutil.NoPTSValue
 	}
-	return avutil.GetFramePTS(f.frame)
+	return avutil.GetFramePTS(f.frame.ptr)
 }
 
 // MediaType returns the type of media (video or audio).
@@ -49,26 +49,26 @@ func (f *FrameWrapper) MediaType() MediaType {
 
 // Width returns the frame width (video only).
 func (f *FrameWrapper) Width() int {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return 0
 	}
-	return int(avutil.GetFrameWidth(f.frame))
+	return int(avutil.GetFrameWidth(f.frame.ptr))
 }
 
 // Height returns the frame height (video only).
 func (f *FrameWrapper) Height() int {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return 0
 	}
-	return int(avutil.GetFrameHeight(f.frame))
+	return int(avutil.GetFrameHeight(f.frame.ptr))
 }
 
 // Format returns the pixel format (video) or sample format (audio).
 func (f *FrameWrapper) Format() int32 {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return -1
 	}
-	return avutil.GetFrameFormat(f.frame)
+	return avutil.GetFrameFormat(f.frame.ptr)
 }
 
 // PixelFormat returns the pixel format for video frames.
@@ -86,12 +86,12 @@ func (f *FrameWrapper) SampleFormat() SampleFormat {
 // For audio: plane 0 contains interleaved samples (packed) or plane N for channel N (planar).
 // Returns nil if the plane is not valid.
 func (f *FrameWrapper) Data(plane int) []byte {
-	if f == nil || f.frame == nil || plane < 0 || plane >= 8 {
+	if f == nil || f.frame.IsNil() || plane < 0 || plane >= 8 {
 		return nil
 	}
 
-	data := avutil.GetFrameData(f.frame)
-	linesize := avutil.GetFrameLinesize(f.frame)
+	data := avutil.GetFrameData(f.frame.ptr)
+	linesize := avutil.GetFrameLinesize(f.frame.ptr)
 
 	if data[plane] == nil {
 		return nil
@@ -120,41 +120,41 @@ func (f *FrameWrapper) Data(plane int) []byte {
 
 // Linesize returns the line size (stride) for the specified plane.
 func (f *FrameWrapper) Linesize(plane int) int {
-	if f == nil || f.frame == nil || plane < 0 || plane >= 8 {
+	if f == nil || f.frame.IsNil() || plane < 0 || plane >= 8 {
 		return 0
 	}
-	linesize := avutil.GetFrameLinesize(f.frame)
+	linesize := avutil.GetFrameLinesize(f.frame.ptr)
 	return int(linesize[plane])
 }
 
 // NumSamples returns the number of audio samples in this frame (audio only).
 func (f *FrameWrapper) NumSamples() int {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return 0
 	}
-	return int(avutil.GetFrameNbSamples(f.frame))
+	return int(avutil.GetFrameNbSamples(f.frame.ptr))
 }
 
 // SampleRate returns the sample rate for audio frames.
 func (f *FrameWrapper) SampleRate() int {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return 0
 	}
-	return int(avutil.GetFrameSampleRate(f.frame))
+	return int(avutil.GetFrameSampleRate(f.frame.ptr))
 }
 
 // IsKeyFrame returns true if this is a keyframe (video only).
 func (f *FrameWrapper) IsKeyFrame() bool {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return false
 	}
-	return avutil.GetFrameKeyFrame(f.frame) != 0
+	return avutil.GetFrameKeyFrame(f.frame.ptr) != 0
 }
 
 // Copy creates a reference to this frame.
 // The returned frame shares the same data buffers.
 func (f *FrameWrapper) Copy() (*FrameWrapper, error) {
-	if f == nil || f.frame == nil {
+	if f == nil || f.frame.IsNil() {
 		return nil, nil
 	}
 
@@ -163,22 +163,22 @@ func (f *FrameWrapper) Copy() (*FrameWrapper, error) {
 		return nil, ErrOutOfMemory
 	}
 
-	if err := avutil.FrameRef(newFrame, f.frame); err != nil {
+	if err := avutil.FrameRef(newFrame, f.frame.ptr); err != nil {
 		avutil.FrameFree(&newFrame)
 		return nil, err
 	}
 
 	return &FrameWrapper{
-		frame:     newFrame,
+		frame:     Frame{ptr: newFrame, owned: true},
 		mediaType: f.mediaType,
 	}, nil
 }
 
 // Free releases the frame resources.
 // After calling Free, the frame must not be used.
-func (f *FrameWrapper) Free() {
-	if f != nil && f.frame != nil {
-		avutil.FrameFree(&f.frame)
-		f.frame = nil
+func (f *FrameWrapper) Free() error {
+	if f == nil {
+		return nil
 	}
+	return f.frame.Free()
 }
