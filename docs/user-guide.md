@@ -154,6 +154,12 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o myapp
 
 ## Decoding Media
 
+### Frame Ownership (Important)
+
+- `Decoder.ReadFrame()` returns a `*ffgo.FrameWrapper`. You do not free it; it is a Go wrapper around the current decoded frame.
+- `Decoder.DecodeVideo()` / `DecodeAudio()` return a **borrowed** `ffgo.Frame` (owned by the decoder and reused). Do **not** free it. If you need to keep it, call `FrameClone()` / `Frame.Clone()` or use `DecodeVideoCopy()` / `ReadFrameCopy()`.
+- `ffgo.FrameAlloc()` returns an **owned** `ffgo.Frame` that you must free with `FrameFree(&f)` / `f.Free()`.
+
 ### Open a File
 
 ```go
@@ -267,13 +273,13 @@ defer encoder.Close()
 
 ```go
 // Write video frame
-err := encoder.WriteVideoFrame(frame)
+err := encoder.WriteVideoFrame(videoFrame) // videoFrame is an ffgo.Frame
 if err != nil {
     return err
 }
 
 // Write audio frame
-err = encoder.WriteAudioFrame(audioFrame)
+err = encoder.WriteAudioFrame(audioFrame) // audioFrame is an ffgo.Frame
 if err != nil {
     return err
 }
@@ -326,7 +332,7 @@ func transcode(input, output string) error {
         }
 
         if frame.MediaType() == ffgo.MediaTypeVideo {
-            err = encoder.WriteVideoFrame(frame)
+            err = encoder.WriteVideoFrame(frame.Raw())
             if err != nil {
                 return err
             }
@@ -363,7 +369,7 @@ for {
     }
 
     if frame.MediaType() == ffgo.MediaTypeVideo {
-        scaled, err := scaler.Scale(frame)
+        scaled, err := scaler.Scale(frame.Raw())
         if err != nil {
             return err
         }
@@ -1135,7 +1141,10 @@ defer decoder.Close()
 encoder, _ := ffgo.NewEncoder("screen.mp4", opts)
 for {
     frame, _ := decoder.ReadFrame()
-    encoder.WriteVideoFrame(frame)
+    if frame == nil {
+        break
+    }
+    _ = encoder.WriteVideoFrame(frame.Raw())
 }
 ```
 

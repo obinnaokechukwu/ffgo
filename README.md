@@ -97,7 +97,8 @@ func transcode(input, output string) error {
             break
         }
         if frame.MediaType() == ffgo.MediaTypeVideo {
-            if err := encoder.WriteVideoFrame(frame); err != nil {
+            // ReadFrame returns a *FrameWrapper; pass the underlying ffgo.Frame to the encoder.
+            if err := encoder.WriteVideoFrame(frame.Raw()); err != nil {
                 return err
             }
         }
@@ -185,7 +186,8 @@ scaler, err := ffgo.NewScaler(
     1280, 720, ffgo.PixelFormatYUV420P,
     ffgo.ScaleBilinear,
 )
-scaledFrame, err := scaler.Scale(frame)
+// scaler.Scale takes an ffgo.Frame (not *FrameWrapper).
+scaledFrame, err := scaler.Scale(videoFrame)
 ```
 
 ### Hardware acceleration

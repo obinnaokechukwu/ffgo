@@ -1359,35 +1359,18 @@ func NewHWDecoder(path string, hwDevice *HWDevice) (*HWAcceleratedDecoder, error
     }, nil
 }
 
-// ReadFrame reads and optionally transfers frame to system memory
-func (d *HWAcceleratedDecoder) ReadFrame() (*Frame, error) {
-    frame, err := d.Decoder.ReadFrame()
-    if err != nil || frame == nil {
-        return frame, err
+// ReadFrame reads and optionally transfers frame to system memory.
+//
+// Note: this section is a design sketch; in the real implementation, ffgo exposes HW decoding via HWDecoder:
+// - ReadHWFrame() returns a borrowed ffgo.Frame in GPU memory
+// - TransferToSystem() returns an owned ffgo.Frame in CPU memory (caller frees)
+func (d *HWAcceleratedDecoder) ReadFrame() (*FrameWrapper, error) {
+    fw, err := d.Decoder.ReadFrame()
+    if err != nil || fw == nil {
+        return fw, err
     }
-
-    // Frame is in HW memory - transfer to system memory if needed
-    if frame.PixelFormat() == d.hwPixFmt {
-        return d.TransferToSystem(frame)
-    }
-
-    return frame, nil
-}
-
-// ReadHWFrame reads frame without transfer (stays in GPU memory)
-func (d *HWAcceleratedDecoder) ReadHWFrame() (*Frame, error) {
-    return d.Decoder.ReadFrame()
-}
-
-// TransferToSystem copies frame from GPU to system memory
-func (d *HWAcceleratedDecoder) TransferToSystem(hwFrame *Frame) (*Frame, error) {
-    swFrame := av_frame_alloc()
-    ret := av_hwframe_transfer_data(swFrame, hwFrame.ptr, 0)
-    if ret < 0 {
-        av_frame_free(&swFrame)
-        return nil, newError(ret, "av_hwframe_transfer_data")
-    }
-    return &Frame{ptr: swFrame}, nil
+    // ... transfer decision ...
+    return fw, nil
 }
 ```
 

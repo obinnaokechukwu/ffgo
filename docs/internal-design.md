@@ -458,6 +458,12 @@ The shim is distributed as:
 | AVDictionary | Various | `av_dict_free()` | Often modified by FFmpeg; check after calls |
 | SwsContext | `sws_getContext()` | `sws_freeContext()` | Thread-safe after creation |
 
+**High-level `ffgo.Frame` (safe wrapper)**
+
+- **Borrowed frames**: Some APIs return frames owned by an internal component and reused (e.g. decoder/scaler). Borrowed frames **must not** be freed; `FrameFree` / `Frame.Free()` returns an error if attempted.
+- **Owned frames**: APIs that allocate new frames return owned frames; the caller must free them.
+- Use `FrameClone` (or `Frame.Clone`) to convert a borrowed frame into an owned one.
+
 ### 7.2 Go Object Lifetime Rules
 
 **Rule 1: Keep Go objects alive while C holds references**
@@ -1040,7 +1046,12 @@ func (d *Decoder) VideoStream() *StreamInfo
 func (d *Decoder) AudioStream() *StreamInfo
 
 // ReadFrame reads the next frame (video or audio)
-func (d *Decoder) ReadFrame() (*Frame, error)
+func (d *Decoder) ReadFrame() (*FrameWrapper, error)
+
+// DecodeVideo/DecodeAudio decode the next frame of that media type.
+// Returned ffgo.Frame values are borrowed (decoder-owned and reused).
+func (d *Decoder) DecodeVideo() (Frame, error)
+func (d *Decoder) DecodeAudio() (Frame, error)
 
 // Seek seeks to a timestamp
 func (d *Decoder) Seek(timestamp time.Duration) error
@@ -1060,7 +1071,7 @@ type Encoder struct {
 func NewEncoder(path string, opts *EncoderOptions) (*Encoder, error)
 
 // WriteFrame encodes and writes a frame
-func (e *Encoder) WriteFrame(frame *Frame) error
+func (e *Encoder) WriteFrame(frame Frame) error
 
 // Close finalizes and closes the output
 func (e *Encoder) Close() error
@@ -1078,7 +1089,8 @@ func NewScaler(srcW, srcH int, srcFmt PixelFormat,
                flags ScaleFlags) (*Scaler, error)
 
 // Scale converts a frame
-func (s *Scaler) Scale(src *Frame) (*Frame, error)
+// Returned ffgo.Frame is borrowed (owned by the scaler and reused).
+func (s *Scaler) Scale(src Frame) (Frame, error)
 
 // Close releases resources
 func (s *Scaler) Close() error
@@ -1114,11 +1126,11 @@ func ReadFrame(ctx *FormatContext, pkt *Packet) error
 func SeekFrame(ctx *FormatContext, streamIndex int, timestamp int64, flags int) error
 
 // avutil package
-func FrameAlloc() *Frame
-func FrameFree(frame **Frame)
-func FrameRef(dst, src *Frame) error
-func FrameUnref(frame *Frame)
-func FrameGetBuffer(frame *Frame, align int) error
+func FrameAlloc() Frame
+func FrameFree(frame *Frame)
+func FrameRef(dst, src Frame) error
+func FrameUnref(frame Frame)
+func FrameGetBufferErr(frame Frame, align int32) error
 ```
 
 ### 11.3 Options Pattern
@@ -1626,7 +1638,7 @@ type Decoder struct {
     // ...
 }
 
-func (d *Decoder) ReadFrame() (*Frame, error) {
+func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
     d.mu.Lock()
     defer d.mu.Unlock()
     // ...
