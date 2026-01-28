@@ -4,9 +4,9 @@
 
 ### Core Functionality
 - **Video decoding** - H.264, HEVC, VP8, VP9, AV1, etc.
-- **Video encoding** - H.264, HEVC, VP8, VP9
+- **Video encoding** - H.264, HEVC (and others if the FFmpeg build provides an encoder)
 - **Audio decoding** - AAC, MP3, Opus, etc.
-- **Audio encoding** - AAC, MP3, Opus (via Encoder with audio streams)
+- **Audio encoding** - AAC (other codecs are possible but encoder-specific requirements may need additional wiring)
 - **Container demuxing** - MP4, MKV, AVI, MOV, etc.
 - **Container muxing** - MP4, MKV, AVI, MOV, etc.
 - **Pixel format conversion** - RGB ↔ YUV, format changes
@@ -26,6 +26,8 @@
 ### High-Level APIs
 - `Decoder` - Video/audio decoding from files or custom I/O
 - `Encoder` - Video/audio encoding with full configuration
+- `Muxer` / `MuxerStream` - Multi-stream muxing (encode or stream-copy)
+- `Remuxer` - Stream copy/remux without re-encoding
 - `Scaler` - Resolution/format conversion
 - `Resampler` - Audio sample rate/format/channel conversion
 - `VideoFilterGraph` / `AudioFilterGraph` - FFmpeg filter chains
@@ -77,15 +79,12 @@
 - `TotalFrames()` - Frame count estimation
 
 ### Stream Copy ✅
-- `WithStreamCopy()` - Copy streams without re-encoding
-- Fast remuxing between compatible containers
+- `Remuxer` - Copy streams without re-encoding (fast remuxing)
+- `EncoderOptions.CopyVideo` / `EncoderOptions.CopyAudio` - Stream copy mode via encoder output
+- `Muxer.AddCopyStream` - Stream copy mode in the muxer API
 
 ### Advanced Codec Options ✅
-- `WithPreset()` - Encoding presets (ultrafast → veryslow)
-- `WithCRF()` - Constant Rate Factor quality control
-- `WithProfile()` / `WithLevel()` - Profile/level control
-- `WithTune()` - Content-specific tuning
-- `WithRateControl()` - ABR, VBR, CBR modes
+- Presets, CRF, profile/level, tune, and rate-control via `VideoEncoderConfig` fields (plus `CodecOptions` for encoder-specific knobs)
 
 ## ⚠️ Partially Implemented / Limited
 
