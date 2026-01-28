@@ -236,15 +236,31 @@ go run examples/decode/main.go testdata/test.mp4
 go run examples/transcode/main.go input.mp4 output.mp4
 ```
 
-## Roadmap
+## Feature Status
 
-- [x] Core decode/encode/transcode
-- [x] Custom I/O support
-- [x] Hardware acceleration hooks
-- [x] Pixel format conversion
-- [ ] Audio resampling
-- [ ] Filter graphs
-- [ ] Subtitle support
+### ✅ Fully Implemented
+- **Core decode/encode/transcode** - All major codecs supported
+- **Custom I/O support** - io.Reader/Writer integration + callbacks
+- **Hardware acceleration** - CUDA, VA-API, VideoToolbox, DXVA2, QSV
+- **Pixel format conversion** - swscale with all scaling algorithms
+- **Audio resampling** - swresample (sample rate, channels, format)
+- **Filter graphs** - avfilter (video and audio filter chains)
+- **Subtitle support** - Text (SRT, ASS, WebVTT) and bitmap subtitles
+- **Metadata handling** - Container and stream-level metadata
+- **Advanced seeking** - Frame-accurate seeking + thumbnail extraction
+- **Stream copy** - Fast remuxing without re-encoding
+- **Bitstream filters** - Packet-level transformations
+- **Network protocols** - HTTP, RTMP streaming (via FFmpeg)
+- **Multi-pass encoding** - Two-pass VBR encoding
+- **HLS/DASH segmentation** - Live streaming segment generation
+
+### 🔄 Coming Soon
+- Enhanced concat demuxer helpers
+- Advanced format probing utilities
+- Multi-program stream helpers
+- Frame pooling and memory optimization
+
+See [Gap Analysis](docs/gap-analysis.md) for detailed feature coverage (~80% of FFmpeg)
 
 ## FAQ
 
