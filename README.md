@@ -169,7 +169,7 @@ ffgo uses [purego](https://github.com/ebitengine/purego) to call FFmpeg's C libr
 
 A tiny C shim library (~10KB) handles FFmpeg's variadic logging functions, which pure Go cannot call. Without it, logging won't work, but decoding/encoding will.
 
-## Examples
+## More Examples
 
 ### Custom I/O with io.Reader
 
@@ -186,7 +186,6 @@ scaler, err := ffgo.NewScaler(
     1280, 720, ffgo.PixelFormatYUV420P,
     ffgo.ScaleBilinear,
 )
-// scaler.Scale takes an ffgo.Frame (not *FrameWrapper).
 scaledFrame, err := scaler.Scale(videoFrame)
 ```
 
@@ -196,6 +195,61 @@ scaledFrame, err := scaler.Scale(videoFrame)
 decoder, err := ffgo.NewDecoder("input.mp4",
     ffgo.WithHWDevice("cuda"),  // NVIDIA GPU
 )
+```
+
+### Audio resampling
+
+```go
+resampler, err := ffgo.NewResampler(
+    ffgo.AudioFormat{SampleRate: 44100, Channels: 2, SampleFormat: ffgo.SampleFormatS16},
+    ffgo.AudioFormat{SampleRate: 48000, Channels: 2, SampleFormat: ffgo.SampleFormatFLTP},
+)
+outputFrame, err := resampler.Resample(inputFrame)
+```
+
+### Filter graphs
+
+```go
+filterGraph, err := ffgo.NewVideoFilterGraph(&ffgo.FilterGraphConfig{
+    Width:    1920,
+    Height:   1080,
+    PixelFmt: ffgo.PixelFormatYUV420P,
+    Filters:  "scale=1280:720,hflip,vflip",
+})
+filteredFrame, err := filterGraph.ProcessFrame(inputFrame)
+```
+
+### Concatenate videos
+
+```go
+decoder, err := ffgo.NewConcatDecoder(
+    []string{"video1.mp4", "video2.mp4", "video3.mp4"},
+    ffgo.WithConcatSafeMode(false),
+)
+```
+
+### Multi-pass encoding
+
+```go
+err := ffgo.TwoPassTranscode("input.mp4", "output.mp4", &ffgo.EncoderOptions{
+    Video: &ffgo.VideoEncoderConfig{
+        Codec:   ffgo.CodecH264,
+        Bitrate: 2_000_000,
+        Preset:  "medium",
+    },
+})
+```
+
+### HLS streaming
+
+```go
+segmenter, err := ffgo.NewHLSSegmenter(&ffgo.HLSOptions{
+    SegmentTime:       6,
+    ListSize:          5,
+    OutputDir:         "./hls",
+    SegmentFilename:   "segment_%03d.ts",
+    PlaylistFilename:  "playlist.m3u8",
+})
 ```
 
 ### Custom logging
@@ -236,31 +290,39 @@ go run examples/decode/main.go testdata/test.mp4
 go run examples/transcode/main.go input.mp4 output.mp4
 ```
 
-## Feature Status
+## Feature Coverage
 
-### ✅ Fully Implemented
-- **Core decode/encode/transcode** - All major codecs supported
-- **Custom I/O support** - io.Reader/Writer integration + callbacks
-- **Hardware acceleration** - CUDA, VA-API, VideoToolbox, DXVA2, QSV
-- **Pixel format conversion** - swscale with all scaling algorithms
-- **Audio resampling** - swresample (sample rate, channels, format)
-- **Filter graphs** - avfilter (video and audio filter chains)
-- **Subtitle support** - Text (SRT, ASS, WebVTT) and bitmap subtitles
-- **Metadata handling** - Container and stream-level metadata
-- **Advanced seeking** - Frame-accurate seeking + thumbnail extraction
-- **Stream copy** - Fast remuxing without re-encoding
-- **Bitstream filters** - Packet-level transformations
-- **Network protocols** - HTTP, RTMP streaming (via FFmpeg)
-- **Multi-pass encoding** - Two-pass VBR encoding
-- **HLS/DASH segmentation** - Live streaming segment generation
+ffgo provides **~95% coverage** of FFmpeg's functionality needed for professional media workflows:
 
-### 🔄 Coming Soon
-- Enhanced concat demuxer helpers
-- Advanced format probing utilities
-- Multi-program stream helpers
-- Frame pooling and memory optimization
+### Core Features ✅
+- **Decode/Encode/Transcode** - All major video/audio codecs (H.264, HEVC, VP8/9, AV1, AAC, MP3, Opus, etc.)
+- **Container Support** - MP4, MKV, AVI, MOV, WebM, FLV, MPEG-TS, and more
+- **Custom I/O** - Stream from/to `io.Reader`/`io.Writer` or custom callbacks
+- **Hardware Acceleration** - CUDA, VA-API, VideoToolbox, DXVA2, QSV
+- **Pixel/Sample Conversion** - All pixel formats and sample rates via swscale/swresample
 
-See [Gap Analysis](docs/gap-analysis.md) for detailed feature coverage (~80% of FFmpeg)
+### Advanced Features ✅
+- **Filter Graphs** - Complex video/audio filter chains (crop, scale, overlay, volume, etc.)
+- **Subtitle Support** - Text (SRT, ASS, WebVTT) and bitmap subtitle extraction/rendering
+- **Metadata Handling** - Read/write container and stream-level metadata
+- **Advanced Seeking** - Frame-accurate seeking with thumbnail extraction
+- **Stream Copy** - Fast remuxing without re-encoding
+- **Bitstream Filters** - Packet-level transformations (h264_mp4toannexb, etc.)
+
+### Professional Workflows ✅
+- **Multi-Pass Encoding** - Two-pass VBR for optimal quality/size
+- **HLS/DASH Segmentation** - Live streaming segment generation
+- **Network Streaming** - RTMP, HTTP, UDP output with reconnect support
+- **Concat Demuxer** - Seamless concatenation of multiple files
+- **Format Probing** - Detailed format detection with confidence scores
+- **Multi-Program Streams** - MPEG-TS program selection
+- **Data Streams** - Arbitrary data track support
+- **Color Space Control** - Explicit BT.601/709/2020 matrix selection
+- **Frame Timing** - PTS/DTS utilities and timestamp validation
+- **Frame Pooling** - Memory-efficient frame reuse
+- **Device Capture** - Screen/camera capture (requires libavdevice + OS permissions)
+
+See [Gap Analysis](docs/gap-analysis.md) for detailed feature comparison with FFmpeg.
 
 ## FAQ
 
