@@ -213,10 +213,12 @@ const (
 	PixelFormatNV12     = avutil.PixelFormatNV12
 
 	// Media types
-	MediaTypeUnknown  = avutil.MediaTypeUnknown
-	MediaTypeVideo    = avutil.MediaTypeVideo
-	MediaTypeAudio    = avutil.MediaTypeAudio
-	MediaTypeSubtitle = avutil.MediaTypeSubtitle
+	MediaTypeUnknown    = avutil.MediaTypeUnknown
+	MediaTypeVideo      = avutil.MediaTypeVideo
+	MediaTypeAudio      = avutil.MediaTypeAudio
+	MediaTypeData       = avutil.MediaTypeData
+	MediaTypeSubtitle   = avutil.MediaTypeSubtitle
+	MediaTypeAttachment = avutil.MediaTypeAttachment
 
 	// Common codec IDs
 	CodecIDNone  = avcodec.CodecIDNone

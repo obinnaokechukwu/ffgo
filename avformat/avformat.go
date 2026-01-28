@@ -41,25 +41,27 @@ const (
 
 // Function bindings
 var (
-	avformatOpenInput          func(ctx *unsafe.Pointer, url string, fmt unsafe.Pointer, options *unsafe.Pointer) int32
-	avformatCloseInput         func(ctx *unsafe.Pointer)
-	avformatFindStreamInfo     func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
-	avformatAllocContext       func() unsafe.Pointer
-	avformatFreeContext        func(ctx unsafe.Pointer)
-	avformatAllocOutputCtx2    func(ctx *unsafe.Pointer, oformat unsafe.Pointer, formatName, filename string) int32
-	avformatNewStream          func(ctx, codec unsafe.Pointer) unsafe.Pointer
-	avformatWriteHeader        func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
-	avWriteTrailer             func(ctx unsafe.Pointer) int32
+	avformatOpenInput       func(ctx *unsafe.Pointer, url string, fmt unsafe.Pointer, options *unsafe.Pointer) int32
+	avformatCloseInput      func(ctx *unsafe.Pointer)
+	avformatFindStreamInfo  func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
+	avformatAllocContext    func() unsafe.Pointer
+	avformatFreeContext     func(ctx unsafe.Pointer)
+	avformatAllocOutputCtx2 func(ctx *unsafe.Pointer, oformat unsafe.Pointer, formatName, filename string) int32
+	avformatNewStream       func(ctx, codec unsafe.Pointer) unsafe.Pointer
+	avformatWriteHeader     func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
+	avWriteTrailer          func(ctx unsafe.Pointer) int32
 
-	avReadFrame              func(ctx, pkt unsafe.Pointer) int32
-	avWriteFrame             func(ctx, pkt unsafe.Pointer) int32
-	avInterleavedWriteFrame  func(ctx, pkt unsafe.Pointer) int32
-	avSeekFrame              func(ctx unsafe.Pointer, streamIndex int32, timestamp int64, flags int32) int32
+	avReadFrame             func(ctx, pkt unsafe.Pointer) int32
+	avWriteFrame            func(ctx, pkt unsafe.Pointer) int32
+	avInterleavedWriteFrame func(ctx, pkt unsafe.Pointer) int32
+	avSeekFrame             func(ctx unsafe.Pointer, streamIndex int32, timestamp int64, flags int32) int32
 
-	avFindBestStream    func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
-	avFindInputFormat   func(name string) unsafe.Pointer
+	avFindBestStream  func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
+	avFindInputFormat func(name string) unsafe.Pointer
+	avDemuxerIterate  func(opaque *unsafe.Pointer) unsafe.Pointer
 
 	avioOpen         func(ctx *unsafe.Pointer, url string, flags int32) int32
+	avioOpen2        func(ctx *unsafe.Pointer, url string, flags int32, intCb unsafe.Pointer, options *unsafe.Pointer) int32
 	avioClose        func(ctx unsafe.Pointer) int32
 	avioClosep       func(ctx *unsafe.Pointer) int32
 	avioAllocContext func(buffer unsafe.Pointer, bufferSize, writeFlag int32, opaque unsafe.Pointer, readPacket, writePacket, seek uintptr) unsafe.Pointer
@@ -117,8 +119,10 @@ func registerBindings() {
 
 	purego.RegisterLibFunc(&avFindBestStream, lib, "av_find_best_stream")
 	purego.RegisterLibFunc(&avFindInputFormat, lib, "av_find_input_format")
+	registerOptionalLibFunc(&avDemuxerIterate, lib, "av_demuxer_iterate")
 
 	purego.RegisterLibFunc(&avioOpen, lib, "avio_open")
+	registerOptionalLibFunc(&avioOpen2, lib, "avio_open2")
 	purego.RegisterLibFunc(&avioClose, lib, "avio_close")
 	purego.RegisterLibFunc(&avioClosep, lib, "avio_closep")
 	purego.RegisterLibFunc(&avioAllocContext, lib, "avio_alloc_context")
@@ -139,6 +143,11 @@ func registerBindings() {
 	}
 
 	bindingsRegistered = true
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() { _ = recover() }()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // AllocContext allocates an AVFormatContext.
@@ -331,6 +340,24 @@ func IOOpen(ctx *IOContext, url string, flags int32) error {
 	return nil
 }
 
+// IOOpen2 opens an I/O context with options (avio_open2).
+// options is a pointer to an AVDictionary that may be modified by FFmpeg.
+func IOOpen2(ctx *IOContext, url string, flags int32, options *avutil.Dictionary) error {
+	if avioOpen2 == nil {
+		return bindings.ErrNotLoaded
+	}
+	var optsPtr *unsafe.Pointer
+	if options != nil {
+		optsPtr = options
+	}
+	ret := avioOpen2(ctx, url, flags, nil, optsPtr)
+	runtime.KeepAlive(url)
+	if ret < 0 {
+		return avutil.NewError(ret, "avio_open2")
+	}
+	return nil
+}
+
 // IOClose closes an I/O context.
 func IOClose(ctx IOContext) error {
 	if ctx == nil || avioClose == nil {
@@ -392,26 +419,164 @@ func PacketUnref(pkt avcodec.Packet) {
 // Verified with offsetof() on FFmpeg 60.16.100
 const (
 	offsetIOContext       = 32  // AVIOContext *pb
+	offsetInputFormat     = 8   // AVInputFormat *iformat
 	offsetNumStreams      = 44  // unsigned int nb_streams
 	offsetStreams         = 48  // AVStream **streams
 	offsetDuration        = 72  // int64_t duration
 	offsetBitRate         = 80  // int64_t bit_rate
+	offsetNbPrograms      = 132 // unsigned int nb_programs
+	offsetPrograms        = 136 // AVProgram **programs
 	offsetNbChapters      = 164 // unsigned int nb_chapters
 	offsetChapters        = 168 // AVChapter **chapters
 	offsetContextMetadata = 176 // AVDictionary *metadata
+	offsetProbeScore      = 300 // int probe_score
 )
 
 // AVChapter struct field offsets (for FFmpeg 6.x)
 const (
-	offsetChapterID          = 0  // int64_t id (actually stored as int64_t in FFmpeg 6.x)
-	offsetChapterTimeBase    = 8  // AVRational time_base (num at +8, den at +12)
-	offsetChapterStart       = 16 // int64_t start
-	offsetChapterEnd         = 24 // int64_t end
-	offsetChapterMetadata    = 32 // AVDictionary *metadata
+	offsetChapterID       = 0  // int64_t id (actually stored as int64_t in FFmpeg 6.x)
+	offsetChapterTimeBase = 8  // AVRational time_base (num at +8, den at +12)
+	offsetChapterStart    = 16 // int64_t start
+	offsetChapterEnd      = 24 // int64_t end
+	offsetChapterMetadata = 32 // AVDictionary *metadata
 )
 
 // Chapter is an opaque FFmpeg AVChapter pointer.
 type Chapter = unsafe.Pointer
+
+// Program is an opaque FFmpeg AVProgram pointer.
+type Program = unsafe.Pointer
+
+// AVProgram struct field offsets (FFmpeg 6.x/7.x)
+const (
+	offsetProgramID            = 0  // int id
+	offsetProgramStreamIndex   = 16 // int *stream_index
+	offsetProgramNbStreamIndex = 24 // unsigned nb_stream_indexes
+	offsetProgramMetadata      = 32 // AVDictionary *metadata
+)
+
+// GetNumPrograms returns the number of programs in the context (e.g. MPEG-TS).
+func GetNumPrograms(ctx FormatContext) int {
+	if ctx == nil {
+		return 0
+	}
+	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbPrograms)))
+}
+
+// GetProgram returns the program at the given index.
+func GetProgram(ctx FormatContext, index int) Program {
+	if ctx == nil || index < 0 {
+		return nil
+	}
+	n := GetNumPrograms(ctx)
+	if index >= n {
+		return nil
+	}
+	programsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetPrograms))
+	if programsPtr == nil {
+		return nil
+	}
+	programArray := (*[1024]unsafe.Pointer)(programsPtr)
+	return programArray[index]
+}
+
+// GetProgramID returns the program id.
+func GetProgramID(p Program) int {
+	if p == nil {
+		return 0
+	}
+	return int(*(*int32)(unsafe.Pointer(uintptr(p) + offsetProgramID)))
+}
+
+// GetProgramStreamIndexes returns a copy of the program's stream indexes.
+func GetProgramStreamIndexes(p Program) []int {
+	if p == nil {
+		return nil
+	}
+	nb := int(*(*uint32)(unsafe.Pointer(uintptr(p) + offsetProgramNbStreamIndex)))
+	if nb <= 0 {
+		return nil
+	}
+	ptr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(p) + offsetProgramStreamIndex))
+	if ptr == nil {
+		return nil
+	}
+	// stream_index is int*, but int is 32-bit in FFmpeg structs.
+	raw := unsafe.Slice((*int32)(ptr), nb)
+	out := make([]int, 0, nb)
+	for _, v := range raw {
+		out = append(out, int(v))
+	}
+	return out
+}
+
+// GetProgramMetadata returns the program-level metadata dictionary.
+func GetProgramMetadata(p Program) avutil.Dictionary {
+	if p == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(p) + offsetProgramMetadata))
+}
+
+// AVInputFormat struct field offsets (FFmpeg 6.x/7.x)
+const (
+	offsetInputFormatName     = 0 // const char *name
+	offsetInputFormatLongName = 8 // const char *long_name
+)
+
+// GetInputFormat returns the input format (demuxer) selected for the context.
+func GetInputFormat(ctx FormatContext) InputFormat {
+	if ctx == nil {
+		return nil
+	}
+	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetInputFormat))
+}
+
+// GetProbeScore returns FFmpeg's probe confidence score for the selected demuxer.
+func GetProbeScore(ctx FormatContext) int {
+	if ctx == nil {
+		return 0
+	}
+	return int(*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetProbeScore)))
+}
+
+// InputFormatName returns the demuxer short name.
+func InputFormatName(f InputFormat) string {
+	if f == nil {
+		return ""
+	}
+	namePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(f) + offsetInputFormatName))
+	return goString(namePtr)
+}
+
+// InputFormatLongName returns the demuxer long name.
+func InputFormatLongName(f InputFormat) string {
+	if f == nil {
+		return ""
+	}
+	namePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(f) + offsetInputFormatLongName))
+	return goString(namePtr)
+}
+
+// DemuxerNames returns the names of available input formats (demuxers), if supported by the FFmpeg build.
+// On older FFmpeg builds where av_demuxer_iterate is missing, it returns nil.
+func DemuxerNames() []string {
+	if avDemuxerIterate == nil {
+		return nil
+	}
+	var opaque unsafe.Pointer
+	var out []string
+	for {
+		f := avDemuxerIterate(&opaque)
+		if f == nil {
+			break
+		}
+		if n := InputFormatName(f); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 
 // GetNumStreams returns the number of streams in the context.
 func GetNumStreams(ctx FormatContext) int {
@@ -679,17 +844,17 @@ const (
 
 // Format context flag constants
 const (
-	AVFMT_FLAG_GENPTS       = 0x0001 // Generate missing pts
-	AVFMT_FLAG_IGNIDX       = 0x0002 // Ignore index
-	AVFMT_FLAG_NONBLOCK     = 0x0004 // Do not block when reading packets
-	AVFMT_FLAG_IGNDTS       = 0x0008 // Ignore DTS on frames that contain both DTS & PTS
-	AVFMT_FLAG_NOFILLIN     = 0x0010 // Do not infer values from other values
-	AVFMT_FLAG_NOPARSE      = 0x0020 // Do not use AVParsers
-	AVFMT_FLAG_NOBUFFER     = 0x0040 // Do not buffer frames
-	AVFMT_FLAG_CUSTOM_IO    = 0x0080 // The caller has supplied a custom AVIOContext
-	AVFMT_FLAG_DISCARD_CORR = 0x0100 // Discard corrupted frames
-	AVFMT_FLAG_FLUSH_PKTS   = 0x0200 // Flush AVIOContext every packet
-	AVFMT_FLAG_BITEXACT     = 0x0400 // Deterministic output
+	AVFMT_FLAG_GENPTS       = 0x0001  // Generate missing pts
+	AVFMT_FLAG_IGNIDX       = 0x0002  // Ignore index
+	AVFMT_FLAG_NONBLOCK     = 0x0004  // Do not block when reading packets
+	AVFMT_FLAG_IGNDTS       = 0x0008  // Ignore DTS on frames that contain both DTS & PTS
+	AVFMT_FLAG_NOFILLIN     = 0x0010  // Do not infer values from other values
+	AVFMT_FLAG_NOPARSE      = 0x0020  // Do not use AVParsers
+	AVFMT_FLAG_NOBUFFER     = 0x0040  // Do not buffer frames
+	AVFMT_FLAG_CUSTOM_IO    = 0x0080  // The caller has supplied a custom AVIOContext
+	AVFMT_FLAG_DISCARD_CORR = 0x0100  // Discard corrupted frames
+	AVFMT_FLAG_FLUSH_PKTS   = 0x0200  // Flush AVIOContext every packet
+	AVFMT_FLAG_BITEXACT     = 0x0400  // Deterministic output
 	AVFMT_FLAG_SORT_DTS     = 0x10000 // Try to interleave output packets by dts
 	AVFMT_FLAG_FAST_SEEK    = 0x80000 // Enable fast seeking
 )
@@ -805,14 +970,14 @@ func IOContextFree(ctx *IOContext) {
 
 // Dictionary constants
 const (
-	AV_DICT_MATCH_CASE     = 1      // Only get an entry with exact-case key match
-	AV_DICT_IGNORE_SUFFIX  = 2      // Return first entry in a dictionary whose first part matches the search key
-	AV_DICT_DONT_STRDUP    = 4      // Take ownership of a key/value that has been allocated with av_malloc()
-	AV_DICT_DONT_STRDUP_KEY = 4     // Same as AV_DICT_DONT_STRDUP
-	AV_DICT_DONT_STRDUP_VAL = 8     // Take ownership of value
-	AV_DICT_DONT_OVERWRITE = 16     // Don't overwrite existing entries
-	AV_DICT_APPEND         = 32     // Append to existing entry value
-	AV_DICT_MULTIKEY       = 64     // Allow to store several equal keys in the dictionary
+	AV_DICT_MATCH_CASE      = 1  // Only get an entry with exact-case key match
+	AV_DICT_IGNORE_SUFFIX   = 2  // Return first entry in a dictionary whose first part matches the search key
+	AV_DICT_DONT_STRDUP     = 4  // Take ownership of a key/value that has been allocated with av_malloc()
+	AV_DICT_DONT_STRDUP_KEY = 4  // Same as AV_DICT_DONT_STRDUP
+	AV_DICT_DONT_STRDUP_VAL = 8  // Take ownership of value
+	AV_DICT_DONT_OVERWRITE  = 16 // Don't overwrite existing entries
+	AV_DICT_APPEND          = 32 // Append to existing entry value
+	AV_DICT_MULTIKEY        = 64 // Allow to store several equal keys in the dictionary
 )
 
 // AVDictionaryEntry struct field offsets

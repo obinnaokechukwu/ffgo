@@ -262,6 +262,14 @@ func (c *CustomIOContext) AVIOContext() avformat.IOContext {
 // NewDecoderFromIO creates a decoder with custom I/O.
 // format is the format hint (e.g., "mp4", "mkv", "avi") - can be empty for auto-detection.
 func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
+	return NewDecoderFromIOWithOptions(callbacks, &DecoderOptions{Format: format})
+}
+
+// NewDecoderFromIOWithOptions creates a decoder with custom I/O and DecoderOptions.
+//
+// It supports passing typed probing controls (probesize/analyzeduration/etc) and a format hint.
+// The returned decoder owns the CustomIOContext and will close it on Decoder.Close().
+func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
 	// Create custom I/O context
 	ioCtx, err := NewCustomIOContext(callbacks, false)
 	if err != nil {
@@ -281,11 +289,46 @@ func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 	// Set CUSTOM_IO flag to tell FFmpeg we own the I/O context
 	avformat.AddFlags(formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
 
+	// Optional format hint.
+	var inputFmt avformat.InputFormat
+	if opts != nil && opts.Format != "" {
+		inputFmt = avformat.FindInputFormat(opts.Format)
+		if inputFmt == nil {
+			ioCtx.Close()
+			avformat.FreeContext(formatCtx)
+			return nil, errors.New("ffgo: input format not found")
+		}
+	}
+
+	// Build AVDictionary from options.
+	var avDict avutil.Dictionary
+	for key, value := range buildDecoderAVOptions(opts) {
+		if value == "" {
+			continue
+		}
+		if err := avutil.DictSet(&avDict, key, value, 0); err != nil {
+			if avDict != nil {
+				avutil.DictFree(&avDict)
+			}
+			ioCtx.Close()
+			avformat.FreeContext(formatCtx)
+			return nil, err
+		}
+	}
+
 	// Open input with custom I/O (pass empty string since we have custom I/O)
-	if err := avformat.OpenInput(&formatCtx, "", nil, nil); err != nil {
+	if err := avformat.OpenInput(&formatCtx, "", inputFmt, &avDict); err != nil {
+		if avDict != nil {
+			avutil.DictFree(&avDict)
+		}
 		ioCtx.Close()
 		avformat.FreeContext(formatCtx)
 		return nil, err
+	}
+
+	// Free any remaining dictionary entries (FFmpeg may have consumed some)
+	if avDict != nil {
+		avutil.DictFree(&avDict)
 	}
 
 	// Find stream info
@@ -301,8 +344,8 @@ func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 		audioStreamIdx: -1,
 	}
 
-	// Store the I/O context for cleanup (we'll need to extend the Decoder struct)
-	// For now, the Decoder will manage the format context but we need to keep ioCtx alive
+	// Ensure the custom I/O stays alive and is cleaned up.
+	d.customIO = ioCtx
 
 	// Find best video stream
 	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
@@ -327,7 +370,6 @@ func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 	d.frame = avutil.FrameAlloc()
 	if d.frame == nil {
 		d.Close()
-		ioCtx.Close()
 		return nil, errors.New("ffgo: failed to allocate frame")
 	}
 
@@ -356,6 +398,28 @@ func NewDecoderFromReader(r io.Reader, format string) (*Decoder, error) {
 	}
 
 	return NewDecoderFromIO(callbacks, format)
+}
+
+// NewDecoderFromReaderWithOptions creates a decoder that reads from an io.Reader using DecoderOptions.
+// If r implements io.Seeker, seeking will be supported.
+func NewDecoderFromReaderWithOptions(r io.Reader, opts *DecoderOptions) (*Decoder, error) {
+	if r == nil {
+		return nil, errors.New("ffgo: reader cannot be nil")
+	}
+
+	callbacks := &IOCallbacks{
+		Read: func(buf []byte) (int, error) {
+			return r.Read(buf)
+		},
+	}
+
+	if seeker, ok := r.(io.Seeker); ok {
+		callbacks.Seek = func(offset int64, whence int) (int64, error) {
+			return seeker.Seek(offset, whence)
+		}
+	}
+
+	return NewDecoderFromIOWithOptions(callbacks, opts)
 }
 
 // NewEncoderToWriter creates an encoder that writes to an io.Writer.
