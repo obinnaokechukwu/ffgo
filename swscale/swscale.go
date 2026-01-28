@@ -46,6 +46,7 @@ var (
 
 	swsGetColorspaceDetails func(ctx unsafe.Pointer, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
 	swsSetColorspaceDetails func(ctx unsafe.Pointer, invTable unsafe.Pointer, srcRange int32, table unsafe.Pointer, dstRange int32, brightness, contrast, saturation int32) int32
+	swsGetCoefficients      func(colorspace int32) unsafe.Pointer
 
 	bindingsRegistered bool
 )
@@ -83,6 +84,7 @@ func registerBindings() {
 	// Optional in some FFmpeg builds / versions
 	registerOptionalLibFunc(&swsGetColorspaceDetails, lib, "sws_getColorspaceDetails")
 	registerOptionalLibFunc(&swsSetColorspaceDetails, lib, "sws_setColorspaceDetails")
+	registerOptionalLibFunc(&swsGetCoefficients, lib, "sws_getCoefficients")
 
 	bindingsRegistered = true
 }
@@ -210,4 +212,12 @@ func SetColorspaceDetails(ctx Context, invTable unsafe.Pointer, srcRange int32, 
 		return -1
 	}
 	return swsSetColorspaceDetails(ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
+}
+
+// GetCoefficients wraps sws_getCoefficients and returns the coefficient table pointer.
+func GetCoefficients(colorspace int32) unsafe.Pointer {
+	if swsGetCoefficients == nil {
+		return nil
+	}
+	return swsGetCoefficients(colorspace)
 }
