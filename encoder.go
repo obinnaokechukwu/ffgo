@@ -4,8 +4,8 @@ package ffgo
 
 import (
 	"errors"
-	"sync"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avcodec"
@@ -20,6 +20,11 @@ type Encoder struct {
 
 	formatCtx avformat.FormatContext
 	ioCtx     avformat.IOContext
+	path      string
+
+	// Optional: used when I/O is opened lazily (e.g. network outputs) or needs avio_open2 options.
+	ioOptions     map[string]string
+	headerOptions map[string]string
 
 	// Video encoding
 	videoCodecCtx avcodec.Context
@@ -33,12 +38,12 @@ type Encoder struct {
 	audioFrameSize int // Number of samples per frame for codec
 
 	// Stream copy mode
-	copyVideo       bool
-	copyAudio       bool
-	videoTimeBase   Rational // Source video time base for rescaling
-	audioTimeBase   Rational // Source audio time base for rescaling
-	videoStreamIdx  int      // Index of video stream for WritePacket
-	audioStreamIdx  int      // Index of audio stream for WritePacket
+	copyVideo      bool
+	copyAudio      bool
+	videoTimeBase  Rational // Source video time base for rescaling
+	audioTimeBase  Rational // Source audio time base for rescaling
+	videoStreamIdx int      // Index of video stream for WritePacket
+	audioStreamIdx int      // Index of audio stream for WritePacket
 
 	// Deprecated: use videoCodecCtx
 	codecCtx avcodec.Context
@@ -212,6 +217,16 @@ type StreamCopySource struct {
 
 // EncoderOptions configures encoder behavior with separate video and audio settings.
 type EncoderOptions struct {
+	// Format optionally overrides output format selection (muxer short name, e.g. "flv", "mpegts", "rtp").
+	// If empty, ffgo will attempt to guess from the output path/extension.
+	Format string
+
+	// IOOptions are passed to avio_open2 when opening the output (useful for streaming/network outputs).
+	IOOptions map[string]string
+
+	// MuxerOptions are passed to avformat_write_header.
+	MuxerOptions map[string]string
+
 	// Video contains video encoding settings. Required for video output when not copying.
 	Video *VideoEncoderConfig
 
@@ -278,6 +293,7 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 		timeBaseNum: 1,
 		timeBaseDen: int32(cfg.FrameRate),
 		hasVideo:    true,
+		path:        path,
 	}
 
 	// Determine format from filename extension
@@ -438,16 +454,22 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 
 	e := &Encoder{
-		width:       video.Width,
-		height:      video.Height,
-		pixFmt:      pixFmt,
-		timeBaseNum: 1,
-		timeBaseDen: int32(frameRateNum / frameRateDen),
-		hasVideo:    true,
+		width:         video.Width,
+		height:        video.Height,
+		pixFmt:        pixFmt,
+		timeBaseNum:   1,
+		timeBaseDen:   int32(frameRateNum / frameRateDen),
+		hasVideo:      true,
+		path:          path,
+		ioOptions:     opts.IOOptions,
+		headerOptions: opts.MuxerOptions,
 	}
 
-	// Determine format from filename extension
-	formatName := guessFormatFromPath(path)
+	// Determine output format (optionally forced).
+	formatName := opts.Format
+	if formatName == "" {
+		formatName = guessFormatFromPath(path)
+	}
 	if formatName == "" {
 		return nil, errors.New("ffgo: cannot determine output format from filename")
 	}
@@ -582,11 +604,15 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
-		if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
-			e.cleanup()
-			return nil, err
+		// For network-style outputs (or when IOOptions are provided), open lazily on header write.
+		// This avoids connecting during encoder construction.
+		if !looksLikeURL(path) && (opts.IOOptions == nil || len(opts.IOOptions) == 0) {
+			if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
+				e.cleanup()
+				return nil, err
+			}
+			avformat.SetIOContext(e.formatCtx, e.ioCtx)
 		}
-		avformat.SetIOContext(e.formatCtx, e.ioCtx)
 	}
 
 	// Allocate video packet
@@ -619,11 +645,103 @@ func intToString(v int) string {
 	}
 }
 
+func looksLikeURL(s string) bool {
+	return strings.Contains(s, "://")
+}
+
+func (e *Encoder) ensureIOOpenLocked() error {
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+	if e.formatCtx == nil {
+		return errors.New("ffgo: encoder is not initialized")
+	}
+	if avformat.HasNoFile(e.formatCtx) {
+		return nil
+	}
+	if e.ioCtx != nil {
+		return nil
+	}
+	if e.path == "" {
+		return errors.New("ffgo: output path is not set")
+	}
+
+	// Build IO options for avio_open2 if provided.
+	if e.ioOptions != nil && len(e.ioOptions) > 0 {
+		var dict avutil.Dictionary
+		for k, v := range e.ioOptions {
+			if v == "" {
+				continue
+			}
+			if err := avutil.DictSet(&dict, k, v, 0); err != nil {
+				if dict != nil {
+					avutil.DictFree(&dict)
+				}
+				return err
+			}
+		}
+		err := avformat.IOOpen2(&e.ioCtx, e.path, avformat.IOFlagWrite, &dict)
+		if dict != nil {
+			avutil.DictFree(&dict)
+		}
+		if err != nil {
+			return err
+		}
+		avformat.SetIOContext(e.formatCtx, e.ioCtx)
+		return nil
+	}
+
+	if err := avformat.IOOpen(&e.ioCtx, e.path, avformat.IOFlagWrite); err != nil {
+		return err
+	}
+	avformat.SetIOContext(e.formatCtx, e.ioCtx)
+	return nil
+}
+
+func (e *Encoder) writeHeaderLocked() error {
+	if e.headerWritten {
+		return nil
+	}
+	if err := e.ensureIOOpenLocked(); err != nil {
+		return err
+	}
+
+	var dict avutil.Dictionary
+	for k, v := range e.headerOptions {
+		if v == "" {
+			continue
+		}
+		if err := avutil.DictSet(&dict, k, v, 0); err != nil {
+			if dict != nil {
+				avutil.DictFree(&dict)
+			}
+			return err
+		}
+	}
+	defer func() {
+		if dict != nil {
+			avutil.DictFree(&dict)
+		}
+	}()
+
+	if err := avformat.WriteHeader(e.formatCtx, &dict); err != nil {
+		return err
+	}
+	e.headerWritten = true
+	return nil
+}
+
 // newEncoderStreamCopy creates an encoder in stream copy mode.
 // Packets are copied directly without decoding/encoding.
 func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
-	// Determine format from filename extension
-	formatName := guessFormatFromPath(path)
+	// Determine output format (optionally forced).
+	formatName := ""
+	if opts != nil {
+		formatName = opts.Format
+	}
+	if formatName == "" {
+		formatName = guessFormatFromPath(path)
+	}
 	if formatName == "" {
 		return nil, errors.New("ffgo: cannot determine output format from filename")
 	}
@@ -633,6 +751,9 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 		copyAudio:      opts.CopyAudio,
 		videoStreamIdx: -1,
 		audioStreamIdx: -1,
+		path:           path,
+		ioOptions:      opts.IOOptions,
+		headerOptions:  opts.MuxerOptions,
 	}
 
 	// Create output format context
@@ -700,11 +821,13 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
-		if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
-			e.cleanup()
-			return nil, err
+		if !looksLikeURL(path) && (opts.IOOptions == nil || len(opts.IOOptions) == 0) {
+			if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
+				e.cleanup()
+				return nil, err
+			}
+			avformat.SetIOContext(e.formatCtx, e.ioCtx)
 		}
-		avformat.SetIOContext(e.formatCtx, e.ioCtx)
 	}
 
 	// Allocate packet for WritePacket
@@ -739,10 +862,9 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 
 	// Write header if not yet written
 	if !e.headerWritten {
-		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
+		if err := e.writeHeaderLocked(); err != nil {
 			return err
 		}
-		e.headerWritten = true
 	}
 
 	// Determine output stream index based on packet media type
@@ -910,7 +1032,7 @@ func (e *Encoder) setupAudio(cfg *AudioEncoderConfig) error {
 
 	// Configure audio codec context
 	avcodec.SetCtxSampleRate(e.audioCodecCtx, int32(sampleRate))
-	avcodec.SetCtxChannelLayout(e.audioCodecCtx, int32(channels)) // FFmpeg 5.1+ requires ch_layout
+	avcodec.SetCtxChannelLayout(e.audioCodecCtx, int32(channels))     // FFmpeg 5.1+ requires ch_layout
 	avcodec.SetCtxSampleFmt(e.audioCodecCtx, int32(SampleFormatFLTP)) // AAC requires FLTP
 	avcodec.SetCtxBitRate(e.audioCodecCtx, bitrate)
 	avcodec.SetCtxTimeBase(e.audioCodecCtx, 1, int32(sampleRate))
@@ -962,15 +1084,7 @@ func (e *Encoder) WriteHeader() error {
 	if e.closed {
 		return errors.New("ffgo: encoder is closed")
 	}
-	if e.headerWritten {
-		return nil
-	}
-
-	if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
-		return err
-	}
-	e.headerWritten = true
-	return nil
+	return e.writeHeaderLocked()
 }
 
 // WriteFrame encodes and writes a frame.
@@ -985,10 +1099,9 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 
 	// Auto-write header if not done
 	if !e.headerWritten {
-		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
+		if err := e.writeHeaderLocked(); err != nil {
 			return err
 		}
-		e.headerWritten = true
 	}
 
 	// Set frame PTS
@@ -1050,10 +1163,9 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 
 	// Ensure header is written
 	if !e.headerWritten {
-		if err := avformat.WriteHeader(e.formatCtx, nil); err != nil {
+		if err := e.writeHeaderLocked(); err != nil {
 			return err
 		}
-		e.headerWritten = true
 	}
 
 	// Set PTS for audio frame

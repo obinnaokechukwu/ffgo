@@ -34,6 +34,8 @@ type Decoder struct {
 
 	videoDecoderOpen bool
 	audioDecoderOpen bool
+	customIO         *CustomIOContext
+	cleanup          func()
 	closed           bool
 }
 
@@ -52,8 +54,25 @@ type DecoderOptions struct {
 	FormatWhitelist []string
 	CodecWhitelist  []string
 
+	// ProbeScore, when >0, requires the detected probe score to be at least this value.
+	// If TryMultipleFormats is enabled, ffgo will attempt additional forced demuxers when the
+	// auto-detected probe score is below this threshold.
+	ProbeScore int
+
+	// FormatBlacklist excludes demuxers from TryMultipleFormats attempts.
+	// Note: this is an ffgo-side filter; it is not passed as an avformat_open_input option.
+	FormatBlacklist []string
+
+	// TryMultipleFormats, when true, retries avformat_open_input with forced demuxers if
+	// auto-detection fails or yields a low probe score.
+	TryMultipleFormats bool
+
 	// Streams specifies which stream types to decode (nil = all streams)
 	Streams []MediaType
+
+	// ProgramID selects a specific program to decode in multi-program inputs (e.g. MPEG-TS).
+	// When set, ffgo will pick the best video/audio streams within the program.
+	ProgramID int
 
 	// HWDevice specifies the hardware device for hardware acceleration (e.g., "cuda", "vaapi")
 	HWDevice string
@@ -74,6 +93,13 @@ func WithFormat(format string) DecoderOption {
 func WithStreams(types ...MediaType) DecoderOption {
 	return func(o *DecoderOptions) {
 		o.Streams = types
+	}
+}
+
+// WithProgramID selects a specific program to decode in multi-program inputs (e.g. MPEG-TS).
+func WithProgramID(id int) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.ProgramID = id
 	}
 }
 
@@ -128,6 +154,27 @@ func WithCodecWhitelist(v ...string) DecoderOption {
 	}
 }
 
+// WithProbeScore requires a minimum probe score for the detected format.
+func WithProbeScore(min int) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.ProbeScore = min
+	}
+}
+
+// WithFormatBlacklist excludes demuxers from TryMultipleFormats attempts.
+func WithFormatBlacklist(v ...string) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.FormatBlacklist = v
+	}
+}
+
+// WithTryMultipleFormats enables retries with forced demuxers when probing is ambiguous.
+func WithTryMultipleFormats(enabled bool) DecoderOption {
+	return func(o *DecoderOptions) {
+		o.TryMultipleFormats = enabled
+	}
+}
+
 func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
 	if opts == nil {
 		return nil
@@ -177,43 +224,11 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 		audioStreamIdx: -1,
 	}
 
-	// Build AVDictionary from options
-	var avDict avutil.Dictionary
-	for key, value := range buildDecoderAVOptions(opts) {
-		if value == "" {
-			continue
-		}
-			if err := avutil.DictSet(&avDict, key, value, 0); err != nil {
-				if avDict != nil {
-					avutil.DictFree(&avDict)
-				}
-				return nil, err
-			}
-	}
-
-	// Optional format hint
-	var inputFmt avformat.InputFormat
-	if opts != nil && opts.Format != "" {
-		inputFmt = avformat.FindInputFormat(opts.Format)
-		if inputFmt == nil {
-			if avDict != nil {
-				avutil.DictFree(&avDict)
-			}
-			return nil, errors.New("ffgo: input format not found")
-		}
-	}
-
-	// Open input file
-	if err := avformat.OpenInput(&d.formatCtx, path, inputFmt, &avDict); err != nil {
-		if avDict != nil {
-			avutil.DictFree(&avDict)
-		}
+	// Open input file (with optional retry logic for ambiguous probing).
+	var err error
+	d.formatCtx, err = openInputWithRetries(path, opts)
+	if err != nil {
 		return nil, err
-	}
-
-	// Free any remaining dictionary entries (FFmpeg may have consumed some)
-	if avDict != nil {
-		avutil.DictFree(&avDict)
 	}
 
 	// Find stream info
@@ -222,16 +237,39 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 		return nil, err
 	}
 
-	// Find best video stream
-	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
-	if d.videoStreamIdx >= 0 {
-		d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
+	// Stream selection.
+	wantVideo, wantAudio := true, true
+	if opts != nil && len(opts.Streams) > 0 {
+		wantVideo, wantAudio = false, false
+		for _, mt := range opts.Streams {
+			switch mt {
+			case MediaTypeVideo:
+				wantVideo = true
+			case MediaTypeAudio:
+				wantAudio = true
+			}
+		}
 	}
 
-	// Find best audio stream
-	d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
-	if d.audioStreamIdx >= 0 {
-		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+	if opts != nil && opts.ProgramID > 0 {
+		if err := d.selectProgramStreams(opts.ProgramID, wantVideo, wantAudio); err != nil {
+			avformat.CloseInput(&d.formatCtx)
+			return nil, err
+		}
+	} else {
+		if wantVideo {
+			d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
+			if d.videoStreamIdx >= 0 {
+				d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
+			}
+		}
+
+		if wantAudio {
+			d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
+			if d.audioStreamIdx >= 0 {
+				d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+			}
+		}
 	}
 
 	// Allocate packet and frame
@@ -838,6 +876,16 @@ func (d *Decoder) Close() error {
 	// Close input
 	if d.formatCtx != nil {
 		avformat.CloseInput(&d.formatCtx)
+	}
+
+	// Cleanup any extra resources (e.g. custom I/O, temp files).
+	if d.cleanup != nil {
+		d.cleanup()
+		d.cleanup = nil
+	}
+	if d.customIO != nil {
+		_ = d.customIO.Close()
+		d.customIO = nil
 	}
 
 	return nil

@@ -56,14 +56,15 @@ var (
 	avOptSetDouble func(obj unsafe.Pointer, name string, val float64, searchFlags int32) int32
 
 	// Hardware context functions
-	avHWDeviceCtxCreate    func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
+	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
 	avHWDeviceFindTypeByName func(name string) int32
-	avHWDeviceGetTypeName  func(deviceType int32) unsafe.Pointer
-	avHWFrameTransferData  func(dst, src unsafe.Pointer, flags int32) int32
+	avHWDeviceGetTypeName    func(deviceType int32) unsafe.Pointer
+	avHWFrameTransferData    func(dst, src unsafe.Pointer, flags int32) int32
 
 	// Buffer reference functions
-	avBufferRef   func(buf unsafe.Pointer) unsafe.Pointer
-	avBufferUnref func(buf *unsafe.Pointer)
+	avBufferCreate func(data unsafe.Pointer, size int32, freeCb uintptr, opaque unsafe.Pointer, flags int32) unsafe.Pointer
+	avBufferRef    func(buf unsafe.Pointer) unsafe.Pointer
+	avBufferUnref  func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
@@ -122,6 +123,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avHWFrameTransferData, lib, "av_hwframe_transfer_data")
 
 	// Buffer reference functions
+	purego.RegisterLibFunc(&avBufferCreate, lib, "av_buffer_create")
 	purego.RegisterLibFunc(&avBufferRef, lib, "av_buffer_ref")
 	purego.RegisterLibFunc(&avBufferUnref, lib, "av_buffer_unref")
 
@@ -604,6 +606,17 @@ func HWFrameTransferData(dst, src Frame, flags int32) error {
 		return NewError(ret, "av_hwframe_transfer_data")
 	}
 	return nil
+}
+
+// BufferCreate wraps av_buffer_create.
+//
+// freeCb is a purego callback pointer for: void free(void *opaque, uint8_t *data).
+// opaque is passed through to the callback when the buffer is released.
+func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque unsafe.Pointer, flags int32) AVBufferRef {
+	if avBufferCreate == nil || data == nil || size <= 0 {
+		return nil
+	}
+	return avBufferCreate(data, int32(size), freeCb, opaque, flags)
 }
 
 // NewBufferRef creates a new reference to a buffer.
