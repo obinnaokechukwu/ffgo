@@ -27,9 +27,9 @@ func TestValidateTimestamps(t *testing.T) {
 	f1 := FrameAlloc()
 	f2 := FrameAlloc()
 	f3 := FrameAlloc()
-	defer FrameFree(&f1)
-	defer FrameFree(&f2)
-	defer FrameFree(&f3)
+	defer func() { _ = FrameFree(&f1) }()
+	defer func() { _ = FrameFree(&f2) }()
+	defer func() { _ = FrameFree(&f3) }()
 
 	avutil.SetFramePTS(f1.ptr, 0)
 	avutil.SetFramePTS(f2.ptr, 1)

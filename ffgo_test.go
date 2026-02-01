@@ -1382,12 +1382,12 @@ func TestRemuxer(t *testing.T) {
 
 	for i := 0; i < 30; i++ {
 		if err := enc.WriteFrame(frame); err != nil {
-			FrameFree(&frame)
+			_ = FrameFree(&frame)
 			enc.Close()
 			t.Fatalf("WriteFrame failed: %v", err)
 		}
 	}
-	FrameFree(&frame)
+	_ = FrameFree(&frame)
 	enc.Close()
 
 	// Now remux to MKV

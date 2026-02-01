@@ -606,7 +606,7 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	if !avformat.HasNoFile(e.formatCtx) {
 		// For network-style outputs (or when IOOptions are provided), open lazily on header write.
 		// This avoids connecting during encoder construction.
-		if !looksLikeURL(path) && (opts.IOOptions == nil || len(opts.IOOptions) == 0) {
+		if !looksLikeURL(path) && len(opts.IOOptions) == 0 {
 			if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
 				e.cleanup()
 				return nil, err
@@ -821,7 +821,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
-		if !looksLikeURL(path) && (opts.IOOptions == nil || len(opts.IOOptions) == 0) {
+		if !looksLikeURL(path) && len(opts.IOOptions) == 0 {
 			if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
 				e.cleanup()
 				return nil, err
