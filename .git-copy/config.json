@@ -8,6 +8,7 @@
       ".claude/**",
       "CLAUDE.md",
       ".env",
+      ".envrc",
       "docs/feature-designs.md",
       "docs/ffmpeg-api-purego-research.md",
       "docs/purego.md",
