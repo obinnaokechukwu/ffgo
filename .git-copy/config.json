@@ -11,9 +11,11 @@
       "docs/ffmpeg-api-purego-research.md",
       "docs/purego.md",
       "docs/VERIFICATION_RESULTS.md",
-      "docs/implementation-designs/**"
+      "docs/implementation-designs/**",
+      "prompts/**"
     ],
-    "opt_in": []
+    "opt_in": [],
+    "replace_history_with_current": ["LICENSE", "README.md"]
   },
   "targets": [
     {
@@ -36,8 +38,8 @@
         "video-processing"
       ],
       "replacement": "obinnaokechukwu",
-      "public_author_name": "obinnaokechukwu@users.noreply.github.com",
-      "public_author_email": "1",
+      "public_author_name": "obinnaokechukwu",
+      "public_author_email": "obinnaokechukwu@users.noreply.github.com",
       "auth": {
         "method": "gh"
       },

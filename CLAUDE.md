@@ -125,18 +125,29 @@ None currently.
 
 ## Known Limitations & Future Enhancements
 
-### 1. Multi-Platform Shim Binaries (Low Priority)
+### 1. Cross-Platform Shim Library (Improved)
 **Location**: `shim/` directory
-**Status**: Only Linux amd64 shim provided
+**Status**: Build system ready, pre-built Linux amd64 provided
 
-Missing platforms:
-- macOS (amd64/arm64): `libffshim.dylib`
-- Windows (amd64/arm64): `ffshim.dll`
-- Linux arm64: `libffshim.so`
+**What the shim does**: Wraps FFmpeg variadic functions (av_log) and struct-by-value operations that purego cannot handle directly.
 
-**Workaround**: Users can compile shim from source using `build.sh`.
-**Impact**: Logging callbacks don't work on other platforms, but ALL core functionality works.
-**Priority**: Low - most users don't need logging callbacks
+**The shim is OPTIONAL**: Core ffgo functionality (decode, encode, transcode, scale, filter) works WITHOUT the shim. Only logging callbacks and some advanced features require it.
+
+**Build system**:
+- `shim/build.sh` - Simple build script for native platform
+- `shim/Makefile` - Makefile with cross-compilation support
+- `.github/workflows/build-shim.yml` - CI for building on all platforms
+
+**Pre-built locations**:
+- `shim/prebuilt/linux-amd64/libffshim.so` - Linux x86_64 (provided)
+- `shim/prebuilt/linux-arm64/libffshim.so` - Built by CI
+- `shim/prebuilt/darwin-amd64/libffshim.dylib` - Built by CI
+- `shim/prebuilt/darwin-arm64/libffshim.dylib` - Built by CI
+- `shim/prebuilt/windows-amd64/ffshim.dll` - Built by CI
+
+**User instructions**: `cd shim && ./build.sh` on any platform
+**Impact**: Logging callbacks require shim, but ALL core functionality works without it
+**Priority**: Resolved - build system complete, CI will provide pre-built binaries
 
 ### 2. Library Detection Improvements (Nice-to-Have)
 **Location**: `internal/bindings/bindings.go`

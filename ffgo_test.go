@@ -2829,3 +2829,66 @@ func fillTestFrameRGB(frame Frame, r, g, b uint8) {
 		}
 	}
 }
+
+func TestDiagnose(t *testing.T) {
+	info := Diagnose()
+
+	// Platform should be set
+	if info.GOOS == "" {
+		t.Error("GOOS should not be empty")
+	}
+	if info.GOARCH == "" {
+		t.Error("GOARCH should not be empty")
+	}
+
+	// FFmpeg should be loaded
+	if !info.FFmpegLoaded {
+		t.Error("FFmpegLoaded should be true")
+	}
+	if info.AVUtilVersion == 0 {
+		t.Error("AVUtilVersion should not be 0")
+	}
+	if info.AVCodecVersion == 0 {
+		t.Error("AVCodecVersion should not be 0")
+	}
+	if info.AVFormatVersion == 0 {
+		t.Error("AVFormatVersion should not be 0")
+	}
+
+	// Test String() method
+	str := info.String()
+	if str == "" {
+		t.Error("String() should not return empty")
+	}
+	t.Log(str)
+
+	// Shim status should be populated
+	if info.ShimLoaded {
+		if info.ShimPath == "" {
+			t.Error("ShimPath should be set when ShimLoaded is true")
+		}
+		t.Logf("Shim loaded from: %s", info.ShimPath)
+	} else {
+		t.Logf("Shim not loaded: %s", info.ShimError)
+	}
+}
+
+func TestShimStatus(t *testing.T) {
+	status := ShimStatus()
+	if status == "" {
+		t.Error("ShimStatus should not return empty")
+	}
+	t.Logf("Shim status: %s", status)
+}
+
+func TestShimBuildInstructions(t *testing.T) {
+	instructions := ShimBuildInstructions()
+	if instructions == "" {
+		t.Error("ShimBuildInstructions should not return empty")
+	}
+	// Verify it contains some expected content
+	if len(instructions) < 50 {
+		t.Error("ShimBuildInstructions seems too short")
+	}
+	t.Logf("Build instructions length: %d chars", len(instructions))
+}

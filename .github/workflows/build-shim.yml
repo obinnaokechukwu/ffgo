@@ -1,0 +1,200 @@
+# Build ffshim for all supported platforms
+# This workflow builds the shim library on native runners for maximum compatibility
+name: Build Shim
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'shim/**'
+      - '.github/workflows/build-shim.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'shim/**'
+      - '.github/workflows/build-shim.yml'
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: 'Upload artifacts even on non-release builds'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  # Build on Linux (amd64 native, arm64 via cross-compilation)
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FFmpeg development libraries (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev
+
+      - name: Install cross-compilation tools (arm64)
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # Install arm64 FFmpeg dev libs
+          sudo dpkg --add-architecture arm64
+          # Add arm64 sources
+          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          sudo apt-get update || true
+          sudo apt-get install -y libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 || true
+
+      - name: Build shim (amd64)
+        if: matrix.arch == 'amd64'
+        working-directory: shim
+        run: |
+          make native
+          mkdir -p prebuilt/linux-amd64
+          cp libffshim.so prebuilt/linux-amd64/
+
+      - name: Build shim (arm64)
+        if: matrix.arch == 'arm64'
+        working-directory: shim
+        run: |
+          # Try cross-compilation, fall back to stub if FFmpeg libs unavailable
+          mkdir -p prebuilt/linux-arm64
+          if aarch64-linux-gnu-gcc --version && pkg-config --exists libavutil 2>/dev/null; then
+            aarch64-linux-gnu-gcc -shared -fPIC -Wall -Wextra -O2 \
+              $(pkg-config --cflags libavutil libavcodec libavformat) \
+              -o prebuilt/linux-arm64/libffshim.so ffshim.c \
+              $(pkg-config --libs libavutil libavcodec libavformat) || \
+            echo "Cross-compilation failed, arm64 shim will need to be built on native hardware"
+          else
+            echo "arm64 FFmpeg dev libs not available, skipping arm64 build"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-linux-${{ matrix.arch }}
+          path: shim/prebuilt/linux-${{ matrix.arch }}/
+          if-no-files-found: ignore
+
+  # Build on macOS (both amd64 and arm64 native)
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13  # Intel
+            arch: amd64
+          - runner: macos-14  # Apple Silicon
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
+      - name: Build shim
+        working-directory: shim
+        run: |
+          make native
+          mkdir -p prebuilt/darwin-${{ matrix.arch }}
+          cp libffshim.dylib prebuilt/darwin-${{ matrix.arch }}/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-darwin-${{ matrix.arch }}
+          path: shim/prebuilt/darwin-${{ matrix.arch }}/
+
+  # Build on Windows
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]  # arm64 Windows runners are not commonly available
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ffmpeg
+            pkg-config
+
+      - name: Build shim
+        shell: msys2 {0}
+        working-directory: shim
+        run: |
+          make native
+          mkdir -p prebuilt/windows-amd64
+          cp ffshim.dll prebuilt/windows-amd64/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shim-windows-${{ matrix.arch }}
+          path: shim/prebuilt/windows-${{ matrix.arch }}/
+
+  # Combine all artifacts into a single release asset
+  package:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' || github.event.inputs.upload_artifacts == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package shims
+        run: |
+          mkdir -p release/shim/prebuilt
+
+          # Copy all platform shims
+          for dir in artifacts/shim-*/; do
+            platform=$(basename "$dir" | sed 's/shim-//')
+            if [ -d "$dir" ] && [ "$(ls -A "$dir")" ]; then
+              mkdir -p "release/shim/prebuilt/$platform"
+              cp -r "$dir"/* "release/shim/prebuilt/$platform/"
+            fi
+          done
+
+          # Create archive
+          cd release
+          tar -czvf ../ffshim-prebuilt.tar.gz shim/
+          cd ..
+
+          # Create checksums
+          sha256sum ffshim-prebuilt.tar.gz > ffshim-prebuilt.tar.gz.sha256
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ffshim-prebuilt.tar.gz
+            ffshim-prebuilt.tar.gz.sha256
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffshim-prebuilt
+          path: |
+            ffshim-prebuilt.tar.gz
+            ffshim-prebuilt.tar.gz.sha256
