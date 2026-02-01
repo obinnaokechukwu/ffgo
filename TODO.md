@@ -1,49 +1,28 @@
 # TODO - ffgo
 
-## Known Issues
+## Status
 
-### 1. purego ARM64 Limitation (High Priority)
+### 1. purego ARM64 Limitation — Mitigated (2026-02-01)
 
-**Problem:** purego doesn't support returning `unsafe.Pointer` from C functions on ARM64 architecture.
+**What was happening:** some purego bindings could panic on ARM64 when the Go function signature returned an `unsafe.Pointer` (example error: `purego: unsupported kind unsafe.Pointer`).
 
-**Symptoms:**
-- Tests in `swscale/swscale_test.go` panic with: `purego: unsupported kind unsafe.Pointer`
-- Affects `GetContext()` and similar functions that return FFmpeg struct pointers
-- Only occurs on macOS ARM64 (Apple Silicon)
+**Fix in ffgo:** internal purego bindings that *return pointers* now return `uintptr`, and wrappers convert back to `unsafe.Pointer`. This avoids registering functions with `unsafe.Pointer` return types while preserving the public API.
 
-**Root Cause:**
-- purego's ARM64 calling convention handler (`struct_arm64.go`) doesn't support registering functions that return `unsafe.Pointer`
-- This is a fundamental limitation of how purego handles ABI differences on ARM64
+**Result:**
+- `swscale` tests no longer skip ARM64 for this reason.
+- Public types remain `unsafe.Pointer` aliases; only the internal binding signatures changed.
 
-**Current Workaround:**
-- Tests are skipped on ARM64 with `skipOnARM64(t)`
-
-**Potential Fixes:**
-1. **Upstream fix:** Wait for purego to add ARM64 support for `unsafe.Pointer` returns
-2. **API redesign:** Change functions to use output parameters instead of return values
-3. **Wrapper approach:** Use shim library to wrap problematic functions
-
-**Affected Functions:**
-- `swscale.GetContext()` - returns `unsafe.Pointer` (SwsContext*)
-- Any other function returning FFmpeg struct pointers
-
-**Tracking:**
-- purego issue: https://github.com/ebitengine/purego/issues
+**Tracking:** purego upstream: https://github.com/ebitengine/purego/issues
 
 ---
 
-### 2. CI Lint Issues (Medium Priority)
+### 2. CI Lint Issues — Resolved (2026-02-01)
 
-**Problem:** golangci-lint reports errcheck and gosimple violations.
+`golangci-lint` runs clean with the repo’s current configuration (CI uses the default golangci-lint action config).
 
-**Remaining Issues:**
-- errcheck: Some function return values not explicitly checked
-- gosimple S1009: Unnecessary nil checks before len() on maps
-
-**Action Required:**
-- Run `golangci-lint run` locally and fix all reported issues
-- Add `_ =` prefix for intentionally ignored errors
-- Remove `if x != nil && len(x) > 0` patterns (just use `if len(x) > 0`)
+Local verification:
+- `golangci-lint run ./...`
+- `go vet -unsafeptr=false ./...`
 
 ---
 

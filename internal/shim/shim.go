@@ -55,7 +55,7 @@ var (
 	shimLogSetCallback func(cb uintptr)
 	shimLogSetLevel    func(level int32)
 	shimLog            func(avcl unsafe.Pointer, level int32, msg string)
-	shimNewChapter     func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) unsafe.Pointer
+	shimNewChapter     func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) uintptr
 
 	// Device enumeration helpers (libavdevice wrappers)
 	shimAVDeviceListInputSources func(formatName, deviceName string, avdictOpts unsafe.Pointer, outCount *int32, outNames, outDescs *unsafe.Pointer) int32
@@ -286,7 +286,7 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 	if shimNewChapter == nil {
 		return nil, errors.New("ffgo: shimNewChapter symbol not available in shim")
 	}
-	ch := shimNewChapter(ctx, id, tbNum, tbDen, start, end, metadata)
+	ch := unsafe.Pointer(shimNewChapter(ctx, id, tbNum, tbDen, start, end, metadata))
 	if ch == nil {
 		return nil, errors.New("ffgo: failed to create chapter")
 	}

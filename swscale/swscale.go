@@ -35,7 +35,7 @@ const (
 
 // Function bindings
 var (
-	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param unsafe.Pointer) unsafe.Pointer
+	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param unsafe.Pointer) uintptr
 	swsScale          func(ctx unsafe.Pointer, srcSlice, srcStride unsafe.Pointer, srcSliceY, srcSliceH int32, dst, dstStride unsafe.Pointer) int32
 	swsFreeContext    func(ctx unsafe.Pointer)
 	swsScaleFrame     func(ctx, dst, src unsafe.Pointer) int32
@@ -46,7 +46,7 @@ var (
 
 	swsGetColorspaceDetails func(ctx unsafe.Pointer, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
 	swsSetColorspaceDetails func(ctx unsafe.Pointer, invTable unsafe.Pointer, srcRange int32, table unsafe.Pointer, dstRange int32, brightness, contrast, saturation int32) int32
-	swsGetCoefficients      func(colorspace int32) unsafe.Pointer
+	swsGetCoefficients      func(colorspace int32) uintptr
 
 	bindingsRegistered bool
 )
@@ -107,12 +107,12 @@ func GetContext(srcW, srcH int, srcFormat avutil.PixelFormat, dstW, dstH int, ds
 	if swsGetContext == nil {
 		return nil
 	}
-	return swsGetContext(
+	return unsafe.Pointer(swsGetContext(
 		int32(srcW), int32(srcH), int32(srcFormat),
 		int32(dstW), int32(dstH), int32(dstFormat),
 		flags,
 		srcFilter, dstFilter, param,
-	)
+	))
 }
 
 // FreeContext frees a scaling context.
@@ -219,5 +219,5 @@ func GetCoefficients(colorspace int32) unsafe.Pointer {
 	if swsGetCoefficients == nil {
 		return nil
 	}
-	return swsGetCoefficients(colorspace)
+	return unsafe.Pointer(swsGetCoefficients(colorspace))
 }
