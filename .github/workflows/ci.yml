@@ -130,4 +130,5 @@ jobs:
           args: --timeout=5m
 
       - name: go vet
-        run: go vet ./...
+        # Disable unsafeptr check - purego intentionally uses unsafe.Pointer for C interop
+        run: go vet -unsafeptr=false ./...
