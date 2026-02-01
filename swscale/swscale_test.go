@@ -4,6 +4,7 @@ package swscale
 
 import (
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/obinnaokechukwu/ffgo/avutil"
@@ -26,8 +27,16 @@ func skipIfNoFFmpeg(t *testing.T) {
 	}
 }
 
+func skipOnARM64(t *testing.T) {
+	t.Helper()
+	if runtime.GOARCH == "arm64" {
+		t.Skip("purego doesn't support unsafe.Pointer returns on ARM64")
+	}
+}
+
 func TestGetContext(t *testing.T) {
 	skipIfNoFFmpeg(t)
+	skipOnARM64(t)
 	// Create a scaling context: 1920x1080 YUV420P -> 1280x720 RGB24
 	ctx := GetContext(
 		1920, 1080, avutil.PixelFormatYUV420P,
@@ -42,6 +51,7 @@ func TestGetContext(t *testing.T) {
 
 func TestGetContextSameSize(t *testing.T) {
 	skipIfNoFFmpeg(t)
+	skipOnARM64(t)
 	// Create a context for pixel format conversion only (no scaling)
 	ctx := GetContext(
 		640, 480, avutil.PixelFormatYUV420P,
@@ -56,6 +66,7 @@ func TestGetContextSameSize(t *testing.T) {
 
 func TestFreeContext(t *testing.T) {
 	skipIfNoFFmpeg(t)
+	skipOnARM64(t)
 	ctx := GetContext(
 		320, 240, avutil.PixelFormatYUV420P,
 		320, 240, avutil.PixelFormatRGB24,
@@ -74,6 +85,7 @@ func TestFreeContext(t *testing.T) {
 
 func TestScaleFlags(t *testing.T) {
 	skipIfNoFFmpeg(t)
+	skipOnARM64(t)
 	testCases := []struct {
 		name  string
 		flags int32
@@ -103,6 +115,7 @@ func TestScaleFlags(t *testing.T) {
 
 func TestScaleWithFrames(t *testing.T) {
 	skipIfNoFFmpeg(t)
+	skipOnARM64(t)
 	// Allocate source frame
 	srcFrame := avutil.FrameAlloc()
 	if srcFrame == nil {
