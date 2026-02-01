@@ -10,34 +10,5 @@
     ],
     "opt_in": []
   },
-  "targets": [
-    {
-      "label": "github",
-      "provider": "github",
-      "account": "obinnaokechukwu",
-      "repo_name": "ffgo",
-      "repo_url": "https://github.com/obinnaokechukwu/ffgo.git",
-      "description": "Pure Go bindings for FFmpeg using purego - no CGO required",
-      "topics": [
-        "audio",
-        "cgo-free",
-        "ffmpeg",
-        "go",
-        "golang",
-        "multimedia",
-        "purego",
-        "transcoding",
-        "video",
-        "video-processing"
-      ],
-      "replacement": "obinnaokechukwu",
-      "public_author_name": "obinnaokechukwu",
-      "public_author_email": "obinnaokechukwu@users.noreply.github.com",
-      "auth": {
-        "method": "gh"
-      },
-      "initial_history_mode": "full",
-      "initial_sync_at": "2026-02-01T14:25:33-05:00"
-    }
-  ]
+  "targets": []
 }

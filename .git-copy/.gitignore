@@ -1,6 +1,0 @@
-# git-copy runtime state (never commit)
-state.json
-
-# cache directories
-cache/
-tmp/
