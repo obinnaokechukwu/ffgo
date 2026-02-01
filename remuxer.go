@@ -72,7 +72,7 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 
 	// Determine which streams to copy
 	var streamsToCopy []int
-	if len(cfg.InputStreams) > 0 {
+	if cfg != nil && len(cfg.InputStreams) > 0 {
 		streamsToCopy = cfg.InputStreams
 	} else {
 		// Copy all streams
