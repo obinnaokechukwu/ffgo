@@ -667,7 +667,7 @@ func (e *Encoder) ensureIOOpenLocked() error {
 	}
 
 	// Build IO options for avio_open2 if provided.
-	if e.ioOptions != nil && len(e.ioOptions) > 0 {
+	if len(e.ioOptions) > 0 {
 		var dict avutil.Dictionary
 		for k, v := range e.ioOptions {
 			if v == "" {
@@ -797,7 +797,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 		}
 		e.audioStream = stream
 		e.audioStreamIdx = streamIdx
-		streamIdx++
+		// Note: streamIdx++ omitted since this is the last stream
 
 		// Copy codec parameters from source
 		codecPar := avformat.GetStreamCodecPar(stream)
@@ -1290,8 +1290,8 @@ func (e *Encoder) Close() error {
 
 	// Flush video encoder
 	if e.videoCodecCtx != nil && e.headerWritten {
-		// Flush by sending nil frame
-		avcodec.SendFrame(e.videoCodecCtx, nil)
+		// Flush by sending nil frame (errors during flush are non-fatal)
+		_ = avcodec.SendFrame(e.videoCodecCtx, nil)
 
 		// Drain remaining packets
 		for {
@@ -1301,14 +1301,14 @@ func (e *Encoder) Close() error {
 				break
 			}
 			avcodec.SetPacketStreamIndex(e.videoPacket, avformat.GetStreamIndex(e.videoStream))
-			avformat.InterleavedWriteFrame(e.formatCtx, e.videoPacket)
+			_ = avformat.InterleavedWriteFrame(e.formatCtx, e.videoPacket)
 		}
 	}
 
 	// Flush audio encoder
 	if e.audioCodecCtx != nil && e.headerWritten {
-		// Flush by sending nil frame
-		avcodec.SendFrame(e.audioCodecCtx, nil)
+		// Flush by sending nil frame (errors during flush are non-fatal)
+		_ = avcodec.SendFrame(e.audioCodecCtx, nil)
 
 		// Drain remaining packets
 		for {
@@ -1322,7 +1322,7 @@ func (e *Encoder) Close() error {
 			avcodec.RescalePacketTS(e.audioPacket,
 				avcodec.GetCtxTimeBase(e.audioCodecCtx),
 				avutil.NewRational(streamTbNum, streamTbDen))
-			avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket)
+			_ = avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket)
 		}
 	}
 
@@ -1363,9 +1363,9 @@ func (e *Encoder) cleanup() {
 		avcodec.FreeContext(&e.audioCodecCtx)
 	}
 
-	// Close I/O context
+	// Close I/O context (errors during cleanup are non-fatal)
 	if e.ioCtx != nil && e.formatCtx != nil {
-		avformat.IOCloseP(&e.ioCtx)
+		_ = avformat.IOCloseP(&e.ioCtx)
 	}
 
 	// Free format context

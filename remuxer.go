@@ -282,7 +282,7 @@ func (r *Remuxer) cleanup() {
 		avcodec.PacketFree(&r.packet)
 	}
 	if r.outputIO != nil && r.outputCtx != nil {
-		avformat.IOCloseP(&r.outputIO)
+		_ = avformat.IOCloseP(&r.outputIO)
 	}
 	if r.outputCtx != nil {
 		avformat.FreeContext(r.outputCtx)

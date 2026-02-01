@@ -11,9 +11,19 @@ import (
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
 )
 
-func init() {
-	if err := bindings.Load(); err != nil {
-		panic("Failed to load FFmpeg: " + err.Error())
+var ffmpegAvailable bool
+
+func TestMain(m *testing.M) {
+	if err := bindings.Load(); err == nil {
+		ffmpegAvailable = true
+	}
+	os.Exit(m.Run())
+}
+
+func skipIfNoFFmpeg(t *testing.T) {
+	t.Helper()
+	if !ffmpegAvailable {
+		t.Skip("FFmpeg not available")
 	}
 }
 
@@ -47,6 +57,7 @@ func createTestVideo(t *testing.T) string {
 }
 
 func TestAllocContext(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	ctx := AllocContext()
 	if ctx == nil {
 		t.Fatal("AllocContext returned nil")
@@ -55,6 +66,7 @@ func TestAllocContext(t *testing.T) {
 }
 
 func TestOpenInput(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -73,6 +85,7 @@ func TestOpenInput(t *testing.T) {
 }
 
 func TestFindStreamInfo(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -98,6 +111,7 @@ func TestFindStreamInfo(t *testing.T) {
 }
 
 func TestFindBestStream(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -131,6 +145,7 @@ func TestFindBestStream(t *testing.T) {
 }
 
 func TestReadFrame(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -171,6 +186,7 @@ func TestReadFrame(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	ver := bindings.AVFormatVersion()
 	if ver == 0 {
 		t.Error("AVFormatVersion returned 0")

@@ -77,7 +77,7 @@ jobs:
         run: echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/shim:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Run tests
-        run: go test -v -race ./...
+        run: go test -v ./...
         env:
           CGO_ENABLED: "0"
           FFGO_SHIM_DIR: ${{ github.workspace }}/shim

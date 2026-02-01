@@ -3,18 +3,30 @@
 package avcodec
 
 import (
+	"os"
 	"testing"
 
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
 )
 
-func init() {
-	if err := bindings.Load(); err != nil {
-		panic("Failed to load FFmpeg: " + err.Error())
+var ffmpegAvailable bool
+
+func TestMain(m *testing.M) {
+	if err := bindings.Load(); err == nil {
+		ffmpegAvailable = true
+	}
+	os.Exit(m.Run())
+}
+
+func skipIfNoFFmpeg(t *testing.T) {
+	t.Helper()
+	if !ffmpegAvailable {
+		t.Skip("FFmpeg not available")
 	}
 }
 
 func TestFindDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// H.264 decoder should always be available
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
@@ -29,6 +41,7 @@ func TestFindDecoder(t *testing.T) {
 }
 
 func TestFindEncoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Try to find an encoder - some systems may not have all encoders
 	codecs := []struct {
 		id   CodecID
@@ -56,6 +69,7 @@ func TestFindEncoder(t *testing.T) {
 }
 
 func TestFindDecoderByName(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	codec := FindDecoderByName("h264")
 	if codec == nil {
 		t.Skip("h264 decoder not found by name")
@@ -66,6 +80,7 @@ func TestFindDecoderByName(t *testing.T) {
 }
 
 func TestAllocContext3(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
 		t.Skip("H264 decoder not found")
@@ -83,6 +98,7 @@ func TestAllocContext3(t *testing.T) {
 }
 
 func TestFreeContext(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
 		t.Skip("H264 decoder not found")
@@ -104,6 +120,7 @@ func TestFreeContext(t *testing.T) {
 }
 
 func TestPacketAllocFree(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	pkt := PacketAlloc()
 	if pkt == nil {
 		t.Fatal("PacketAlloc returned nil")
@@ -133,6 +150,7 @@ func TestCodecIDConstants(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	ver := bindings.AVCodecVersion()
 	if ver == 0 {
 		t.Error("AVCodecVersion returned 0")

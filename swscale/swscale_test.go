@@ -3,19 +3,31 @@
 package swscale
 
 import (
+	"os"
 	"testing"
 
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
 )
 
-func init() {
-	if err := bindings.Load(); err != nil {
-		panic("Failed to load FFmpeg: " + err.Error())
+var ffmpegAvailable bool
+
+func TestMain(m *testing.M) {
+	if err := bindings.Load(); err == nil {
+		ffmpegAvailable = true
+	}
+	os.Exit(m.Run())
+}
+
+func skipIfNoFFmpeg(t *testing.T) {
+	t.Helper()
+	if !ffmpegAvailable {
+		t.Skip("FFmpeg not available")
 	}
 }
 
 func TestGetContext(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a scaling context: 1920x1080 YUV420P -> 1280x720 RGB24
 	ctx := GetContext(
 		1920, 1080, avutil.PixelFormatYUV420P,
@@ -29,6 +41,7 @@ func TestGetContext(t *testing.T) {
 }
 
 func TestGetContextSameSize(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a context for pixel format conversion only (no scaling)
 	ctx := GetContext(
 		640, 480, avutil.PixelFormatYUV420P,
@@ -42,6 +55,7 @@ func TestGetContextSameSize(t *testing.T) {
 }
 
 func TestFreeContext(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	ctx := GetContext(
 		320, 240, avutil.PixelFormatYUV420P,
 		320, 240, avutil.PixelFormatRGB24,
@@ -59,6 +73,7 @@ func TestFreeContext(t *testing.T) {
 }
 
 func TestScaleFlags(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testCases := []struct {
 		name  string
 		flags int32
@@ -87,6 +102,7 @@ func TestScaleFlags(t *testing.T) {
 }
 
 func TestScaleWithFrames(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Allocate source frame
 	srcFrame := avutil.FrameAlloc()
 	if srcFrame == nil {
@@ -189,6 +205,7 @@ func fillTestPattern(frame avutil.Frame) {
 }
 
 func TestVersion(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	ver := bindings.SWScaleVersion()
 	if ver == 0 {
 		t.Error("SWScaleVersion returned 0")

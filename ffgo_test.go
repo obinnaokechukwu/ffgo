@@ -15,9 +15,19 @@ import (
 	"github.com/obinnaokechukwu/ffgo/avutil"
 )
 
-func init() {
-	if err := Init(); err != nil {
-		panic("Failed to initialize FFmpeg: " + err.Error())
+var ffmpegAvailable bool
+
+func TestMain(m *testing.M) {
+	if err := Init(); err == nil {
+		ffmpegAvailable = true
+	}
+	os.Exit(m.Run())
+}
+
+func skipIfNoFFmpeg(t *testing.T) {
+	t.Helper()
+	if !ffmpegAvailable {
+		t.Skip("FFmpeg not available")
 	}
 }
 
@@ -50,6 +60,7 @@ func createTestVideo(t *testing.T) string {
 }
 
 func TestInit(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	err := Init()
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
@@ -61,6 +72,7 @@ func TestInit(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	avutil, avcodec, avformat := Version()
 	if avutil == 0 {
 		t.Error("avutil version is 0")
@@ -78,6 +90,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -115,6 +128,7 @@ func TestDecoder(t *testing.T) {
 }
 
 func TestDecoderDecodeVideo(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -158,6 +172,7 @@ func TestDecoderDecodeVideo(t *testing.T) {
 }
 
 func TestScaler(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create scaler
 	scaler, err := NewScalerWithConfig(ScalerConfig{
 		SrcWidth:  320,
@@ -183,6 +198,7 @@ func TestScaler(t *testing.T) {
 }
 
 func TestScalerWithDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -244,6 +260,7 @@ func TestScalerWithDecoder(t *testing.T) {
 }
 
 func TestFrameAlloc(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	frame := FrameAlloc()
 	if frame.IsNil() {
 		t.Fatal("FrameAlloc returned nil")
@@ -256,6 +273,7 @@ func TestFrameAlloc(t *testing.T) {
 }
 
 func TestRational(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	r := NewRational(30000, 1001)
 	if r.Num != 30000 || r.Den != 1001 {
 		t.Errorf("Expected 30000/1001, got %d/%d", r.Num, r.Den)
@@ -269,6 +287,7 @@ func TestRational(t *testing.T) {
 }
 
 func TestEncoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "output.mp4")
 
@@ -303,6 +322,7 @@ func TestEncoder(t *testing.T) {
 }
 
 func TestEncoderWriteFrames(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "output.mp4")
 
@@ -432,6 +452,7 @@ func fillTestFrame(frame Frame, frameNum, width, height int) {
 }
 
 func TestEncoderWithDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a test video
 	inputFile := createTestVideo(t)
 	if inputFile == "" {
@@ -507,6 +528,7 @@ func TestEncoderWithDecoder(t *testing.T) {
 }
 
 func TestDecoderFromReader(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -545,6 +567,7 @@ func TestDecoderFromReader(t *testing.T) {
 }
 
 func TestDecoderFromReaderWithDecode(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -591,6 +614,7 @@ func TestDecoderFromReaderWithDecode(t *testing.T) {
 }
 
 func TestDecoderFromIOCallbacks(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -661,6 +685,7 @@ func TestDecoderFromIOCallbacks(t *testing.T) {
 }
 
 func TestEncoderWithAudio(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "audio_video.mp4")
 
@@ -711,6 +736,7 @@ func TestEncoderWithAudio(t *testing.T) {
 }
 
 func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "av_output.mp4")
 
@@ -799,6 +825,7 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 }
 
 func TestSampleFormatConstants(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Verify sample format constants are exported correctly
 	tests := []struct {
 		name   string
@@ -831,6 +858,7 @@ func TestSampleFormatConstants(t *testing.T) {
 }
 
 func TestNewResampler(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a resampler for 44100Hz stereo S16 -> 48000Hz stereo FLTP
 	src := AudioFormat{
 		SampleRate:   44100,
@@ -863,6 +891,7 @@ func TestNewResampler(t *testing.T) {
 }
 
 func TestResamplerValidation(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Test invalid inputs
 	tests := []struct {
 		name string
@@ -903,6 +932,7 @@ func TestResamplerValidation(t *testing.T) {
 }
 
 func TestChannelLayoutConstants(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Verify channel layout constants
 	tests := []struct {
 		name   string
@@ -925,6 +955,7 @@ func TestChannelLayoutConstants(t *testing.T) {
 }
 
 func TestChannelLayoutString(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tests := []struct {
 		layout ChannelLayout
 		want   string
@@ -945,6 +976,7 @@ func TestChannelLayoutString(t *testing.T) {
 }
 
 func TestChannelLayoutNumChannels(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tests := []struct {
 		layout   ChannelLayout
 		channels int
@@ -967,6 +999,7 @@ func TestChannelLayoutNumChannels(t *testing.T) {
 // FilterGraph tests
 
 func TestNewVideoFilterGraph(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
 	if err != nil {
 		t.Fatalf("NewVideoFilterGraph failed: %v", err)
@@ -984,6 +1017,7 @@ func TestNewVideoFilterGraph(t *testing.T) {
 }
 
 func TestVideoFilterGraphWithScale(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a filter graph that scales 640x480 to 320x240
 	graph, err := NewVideoFilterGraph("scale=320:240", 640, 480, PixelFormatYUV420P)
 	if err != nil {
@@ -995,6 +1029,7 @@ func TestVideoFilterGraphWithScale(t *testing.T) {
 }
 
 func TestVideoFilterGraphWithChain(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Test multiple filters in a chain
 	graph, err := NewVideoFilterGraph("scale=320:240,format=yuv420p", 640, 480, PixelFormatYUV420P)
 	if err != nil {
@@ -1006,6 +1041,7 @@ func TestVideoFilterGraphWithChain(t *testing.T) {
 }
 
 func TestFilterGraphValidation(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tests := []struct {
 		name    string
 		cfg     FilterGraphConfig
@@ -1072,6 +1108,7 @@ func TestFilterGraphValidation(t *testing.T) {
 }
 
 func TestFilterGraphClose(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
 	if err != nil {
 		t.Fatalf("NewVideoFilterGraph failed: %v", err)
@@ -1100,6 +1137,7 @@ func TestFilterGraphClose(t *testing.T) {
 }
 
 func TestAudioFilterGraphBasic(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	cfg := FilterGraphConfig{
 		SampleRate: 48000,
 		Channels:   2,
@@ -1124,6 +1162,7 @@ func TestAudioFilterGraphBasic(t *testing.T) {
 }
 
 func TestAudioFilterGraphVolume(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Test volume filter
 	cfg := FilterGraphConfig{
 		SampleRate: 44100,
@@ -1144,6 +1183,7 @@ func TestAudioFilterGraphVolume(t *testing.T) {
 // Tests for advanced codec options
 
 func TestEncoderWithPreset(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "preset_test.mp4")
 
@@ -1167,6 +1207,7 @@ func TestEncoderWithPreset(t *testing.T) {
 }
 
 func TestEncoderWithCRF(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "crf_test.mp4")
 
@@ -1191,6 +1232,7 @@ func TestEncoderWithCRF(t *testing.T) {
 }
 
 func TestEncoderWithProfile(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "profile_test.mp4")
 
@@ -1216,6 +1258,7 @@ func TestEncoderWithProfile(t *testing.T) {
 }
 
 func TestEncoderWithCodecOptions(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "options_test.mp4")
 
@@ -1242,6 +1285,7 @@ func TestEncoderWithCodecOptions(t *testing.T) {
 }
 
 func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "advanced_encode.mp4")
 
@@ -1303,6 +1347,7 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 // Tests for stream copy / remuxer
 
 func TestRemuxer(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create test video file first
 	srcDir := t.TempDir()
 	srcPath := filepath.Join(srcDir, "source.mp4")
@@ -1384,6 +1429,7 @@ func TestRemuxer(t *testing.T) {
 }
 
 func TestRemuxerSelectStreams(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create test video file
 	srcDir := t.TempDir()
 	srcPath := filepath.Join(srcDir, "source.mp4")
@@ -1419,7 +1465,7 @@ func TestRemuxerSelectStreams(t *testing.T) {
 	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 10; i++ {
-		enc.WriteFrame(frame)
+		_ = enc.WriteFrame(frame)
 	}
 	_ = FrameFree(&frame)
 	enc.Close()
@@ -1455,6 +1501,7 @@ func TestRemuxerSelectStreams(t *testing.T) {
 }
 
 func TestMetadataRead(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create test video with metadata using ffmpeg CLI
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "metadata_test.mp4")
@@ -1498,6 +1545,7 @@ func TestMetadataRead(t *testing.T) {
 }
 
 func TestMetadataWrite(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "metadata_write.mkv")
 
@@ -1539,7 +1587,7 @@ func TestMetadataWrite(t *testing.T) {
 	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 10; i++ {
-		enc.WriteFrame(frame)
+		_ = enc.WriteFrame(frame)
 	}
 	_ = FrameFree(&frame)
 	enc.Close()
@@ -1570,6 +1618,7 @@ func TestMetadataWrite(t *testing.T) {
 }
 
 func TestAvailableHWDeviceTypes(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	types := AvailableHWDeviceTypes()
 	t.Logf("Available hardware device types: %d", len(types))
 	for _, hwType := range types {
@@ -1579,6 +1628,7 @@ func TestAvailableHWDeviceTypes(t *testing.T) {
 }
 
 func TestHWDevice(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Find available hardware device
 	types := AvailableHWDeviceTypes()
 	if len(types) == 0 {
@@ -1612,6 +1662,7 @@ func TestHWDevice(t *testing.T) {
 }
 
 func TestHWDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Find available hardware device
 	types := AvailableHWDeviceTypes()
 	if len(types) == 0 {
@@ -1669,6 +1720,7 @@ func TestHWDecoder(t *testing.T) {
 }
 
 func TestSeekPrecise(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -1707,6 +1759,7 @@ func TestSeekPrecise(t *testing.T) {
 }
 
 func TestSeekToFrame(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -1755,6 +1808,7 @@ func TestSeekToFrame(t *testing.T) {
 }
 
 func TestExtractThumbnail(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -1783,6 +1837,7 @@ func TestExtractThumbnail(t *testing.T) {
 }
 
 func TestExtractThumbnails(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -1817,6 +1872,7 @@ func TestExtractThumbnails(t *testing.T) {
 }
 
 func TestTotalFrames(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -1838,6 +1894,7 @@ func TestTotalFrames(t *testing.T) {
 }
 
 func TestSubtitleDetection(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Test video without subtitles
 	testFile := createTestVideo(t)
 	if testFile == "" {
@@ -1909,6 +1966,7 @@ Test Subtitle
 }
 
 func TestSubtitleDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideoWithSubtitles(t)
 	if testFile == "" {
 		t.Skip("Could not create test file with subtitles")
@@ -1963,6 +2021,7 @@ func TestSubtitleDecoder(t *testing.T) {
 }
 
 func TestBitstreamFilterExists(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	filters := ListBitstreamFilters()
 	t.Logf("Checking %d known bitstream filters", len(filters))
 
@@ -1978,6 +2037,7 @@ func TestBitstreamFilterExists(t *testing.T) {
 }
 
 func TestBitstreamFilterNull(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create null filter (passthrough)
 	bsf, err := NewBitstreamFilter(BSFNameNull)
 	if err != nil {
@@ -1994,6 +2054,7 @@ func TestBitstreamFilterNull(t *testing.T) {
 }
 
 func TestBitstreamFilterH264(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	if !BitstreamFilterExists(BSFNameH264Mp4ToAnnexB) {
 		t.Skip("h264_mp4toannexb filter not available")
 		return
@@ -2030,6 +2091,7 @@ func TestBitstreamFilterH264(t *testing.T) {
 }
 
 func TestStreamMetadata(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
 
@@ -2069,7 +2131,7 @@ func TestStreamMetadata(t *testing.T) {
 	_ = AVUtil.FrameGetBuffer(frame, 0)
 
 	for i := 0; i < 5; i++ {
-		enc.WriteFrame(frame)
+		_ = enc.WriteFrame(frame)
 	}
 	_ = FrameFree(&frame)
 	enc.Close()
@@ -2093,6 +2155,7 @@ func TestStreamMetadata(t *testing.T) {
 }
 
 func TestSaveFrame(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -2178,6 +2241,7 @@ func TestSaveFrame(t *testing.T) {
 }
 
 func TestExtractFrameFunction(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -2200,6 +2264,7 @@ func TestExtractFrameFunction(t *testing.T) {
 }
 
 func TestGenerateThumbnails(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -2225,6 +2290,7 @@ func TestGenerateThumbnails(t *testing.T) {
 }
 
 func TestGetKeyframes(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	testFile := createTestVideo(t)
 	if testFile == "" {
 		return
@@ -2253,6 +2319,7 @@ func TestGetKeyframes(t *testing.T) {
 }
 
 func TestNewNetworkDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Test that NewNetworkDecoder works with local files (simulating network behavior)
 	testFile := createTestVideo(t)
 	if testFile == "" {
@@ -2288,6 +2355,7 @@ func TestNewNetworkDecoder(t *testing.T) {
 }
 
 func TestGetAttachments(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a test video with an attachment using ffmpeg
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "with_attachment.mkv")
@@ -2349,6 +2417,7 @@ func TestGetAttachments(t *testing.T) {
 }
 
 func TestGetChapters(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create a test video with chapters using ffmpeg
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "chapters.mkv")
@@ -2411,6 +2480,7 @@ title=Main Content
 }
 
 func TestImageSequenceDecoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create test images using ffmpeg
 	tmpDir := t.TempDir()
 	pattern := filepath.Join(tmpDir, "frame_%04d.png")
@@ -2470,6 +2540,7 @@ func TestImageSequenceDecoder(t *testing.T) {
 }
 
 func TestImageSequenceEncoder(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create output directory
 	tmpDir := t.TempDir()
 	pattern := filepath.Join(tmpDir, "out_%04d.png")
@@ -2538,6 +2609,7 @@ func padNumber(n, width int) string {
 }
 
 func TestSubtitleRenderer(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// Create test video file
 	testFile := createTestVideo(t)
 	if testFile == "" {
@@ -2615,6 +2687,7 @@ This is a test
 }
 
 func TestSubtitleRendererWithOptions(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 
 	// Create a simple SRT subtitle file
@@ -2643,6 +2716,7 @@ Test
 }
 
 func TestSubtitleFormat(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tests := []struct {
 		format SubtitleFormat
 		want   string
@@ -2664,6 +2738,7 @@ func TestSubtitleFormat(t *testing.T) {
 }
 
 func TestMuxer(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "muxer_output.mp4")
 
@@ -2831,6 +2906,7 @@ func fillTestFrameRGB(frame Frame, r, g, b uint8) {
 }
 
 func TestDiagnose(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	info := Diagnose()
 
 	// Platform should be set
@@ -2874,6 +2950,7 @@ func TestDiagnose(t *testing.T) {
 }
 
 func TestShimStatus(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	status := ShimStatus()
 	if status == "" {
 		t.Error("ShimStatus should not return empty")
@@ -2882,6 +2959,7 @@ func TestShimStatus(t *testing.T) {
 }
 
 func TestShimBuildInstructions(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	instructions := ShimBuildInstructions()
 	if instructions == "" {
 		t.Error("ShimBuildInstructions should not return empty")

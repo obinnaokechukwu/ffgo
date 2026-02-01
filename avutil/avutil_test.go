@@ -3,19 +3,30 @@
 package avutil
 
 import (
+	"os"
 	"testing"
 
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
 )
 
-func init() {
-	// Load FFmpeg libraries before running tests
-	if err := bindings.Load(); err != nil {
-		panic("Failed to load FFmpeg: " + err.Error())
+var ffmpegAvailable bool
+
+func TestMain(m *testing.M) {
+	if err := bindings.Load(); err == nil {
+		ffmpegAvailable = true
+	}
+	os.Exit(m.Run())
+}
+
+func skipIfNoFFmpeg(t *testing.T) {
+	t.Helper()
+	if !ffmpegAvailable {
+		t.Skip("FFmpeg not available")
 	}
 }
 
 func TestFrameAlloc(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -28,6 +39,7 @@ func TestFrameAlloc(t *testing.T) {
 }
 
 func TestFrameFree(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -44,6 +56,7 @@ func TestFrameFree(t *testing.T) {
 }
 
 func TestFrameAllocAndSetup(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -151,6 +164,7 @@ func TestRationalCmp(t *testing.T) {
 }
 
 func TestErrorString(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// AVERROR_EOF
 	msg := ErrorString(AVERROR_EOF)
 	if msg == "" {

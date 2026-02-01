@@ -139,14 +139,14 @@ func (e *Encoder) SetChapters(chapters []Chapter) error {
 			id = int64(i)
 		}
 
-		// Create metadata dictionary for title
+		// Create metadata dictionary for title (errors are non-fatal for metadata)
 		var metadata avutil.Dictionary
 		if ch.Title != "" {
-			avutil.DictSet(&metadata, "title", ch.Title, 0)
+			_ = avutil.DictSet(&metadata, "title", ch.Title, 0)
 			// Add any additional metadata
 			for k, v := range ch.Metadata {
 				if k != "title" { // Don't duplicate title
-					avutil.DictSet(&metadata, k, v, 0)
+					_ = avutil.DictSet(&metadata, k, v, 0)
 				}
 			}
 		}

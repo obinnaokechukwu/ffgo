@@ -76,8 +76,8 @@ var (
 	avDictGet func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) unsafe.Pointer
 	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
 
-	// Chapter function
-	avformatNewChapter func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) unsafe.Pointer
+	// Note: Chapter creation uses the shim (internal/shim.NewChapter) because avformat_new_chapter
+	// has a complex signature that doesn't work well with purego's dynamic binding.
 
 	bindingsRegistered bool
 )
