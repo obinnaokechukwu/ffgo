@@ -239,7 +239,7 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 
 	// Stream selection.
 	wantVideo, wantAudio := true, true
-	if opts != nil && len(opts.Streams) > 0 {
+	if len(opts.Streams) > 0 {
 		wantVideo, wantAudio = false, false
 		for _, mt := range opts.Streams {
 			switch mt {

@@ -5,6 +5,7 @@
   "defaults": {
     "exclude": [
       ".git-copy/**",
+      ".claude/**",
       "CLAUDE.md",
       ".env",
       "docs/feature-designs.md",
