@@ -1,0 +1,133 @@
+# Continuous Integration for ffgo
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  GO_VERSION: '1.23'
+
+jobs:
+  # Test without FFmpeg (should pass - tests mock/skip FFmpeg deps)
+  test-no-ffmpeg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run tests without FFmpeg
+        run: go test -v -short ./...
+        env:
+          CGO_ENABLED: "0"
+
+  # Test with FFmpeg on multiple platforms
+  test-with-ffmpeg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux amd64
+          - os: macos-13
+            name: macOS Intel
+          - os: macos-14
+            name: macOS ARM64
+          # Windows tests are more complex due to FFmpeg setup
+          # - os: windows-latest
+          #   name: Windows amd64
+
+    runs-on: ${{ matrix.os }}
+    name: Test (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev \
+            libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Build shim
+        working-directory: shim
+        run: ./build.sh
+
+      - name: Set library path (Linux)
+        if: runner.os == 'Linux'
+        run: echo "LD_LIBRARY_PATH=${{ github.workspace }}/shim:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Set library path (macOS)
+        if: runner.os == 'macOS'
+        run: echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/shim:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: go test -v -race ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+      - name: Run integration tests
+        run: go test -v -run Integration ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+  # Test graceful degradation without shim
+  test-degraded-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install FFmpeg (without building shim)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev \
+            libswscale-dev libswresample-dev libavfilter-dev
+
+      - name: Run tests (no shim - degraded mode)
+        run: go test -v ./...
+        env:
+          CGO_ENABLED: "0"
+          # Explicitly unset shim directory to test degraded mode
+          FFGO_SHIM_DIR: ""
+
+  # Lint and vet
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: go vet
+        run: go vet ./...

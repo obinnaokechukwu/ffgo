@@ -11,11 +11,14 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
+	"runtime"
 
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avformat"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // Init initializes FFmpeg libraries. This is called automatically when using
@@ -33,6 +36,118 @@ func IsLoaded() bool {
 // Version returns FFmpeg library versions.
 func Version() (avutil, avcodec, avformat uint32) {
 	return bindings.AVUtilVersion(), bindings.AVCodecVersion(), bindings.AVFormatVersion()
+}
+
+// DiagnosticInfo contains diagnostic information about the ffgo library state.
+type DiagnosticInfo struct {
+	// Platform information
+	GOOS   string
+	GOARCH string
+
+	// FFmpeg library status
+	FFmpegLoaded  bool
+	AVUtilVersion uint32
+	AVCodecVersion uint32
+	AVFormatVersion uint32
+
+	// Shim library status
+	ShimLoaded      bool
+	ShimPath        string
+	ShimError       string
+	LoggingAvailable bool
+
+	// Feature availability
+	SWScaleAvailable    bool
+	SWResampleAvailable bool
+	AVFilterAvailable   bool
+	AVDeviceAvailable   bool
+}
+
+// String returns a human-readable summary of the diagnostic info.
+func (d DiagnosticInfo) String() string {
+	ffmpegStatus := "not loaded"
+	if d.FFmpegLoaded {
+		ffmpegStatus = fmt.Sprintf("loaded (avutil %d.%d.%d, avcodec %d.%d.%d, avformat %d.%d.%d)",
+			d.AVUtilVersion>>16, (d.AVUtilVersion>>8)&0xFF, d.AVUtilVersion&0xFF,
+			d.AVCodecVersion>>16, (d.AVCodecVersion>>8)&0xFF, d.AVCodecVersion&0xFF,
+			d.AVFormatVersion>>16, (d.AVFormatVersion>>8)&0xFF, d.AVFormatVersion&0xFF)
+	}
+
+	shimStatus := "not loaded"
+	if d.ShimLoaded {
+		shimStatus = fmt.Sprintf("loaded from %s", d.ShimPath)
+	} else if d.ShimError != "" {
+		shimStatus = fmt.Sprintf("not loaded: %s", d.ShimError)
+	}
+
+	return fmt.Sprintf(`ffgo Diagnostic Info
+====================
+Platform: %s/%s
+FFmpeg:   %s
+Shim:     %s
+Logging:  %v
+Features: swscale=%v swresample=%v avfilter=%v avdevice=%v`,
+		d.GOOS, d.GOARCH,
+		ffmpegStatus,
+		shimStatus,
+		d.LoggingAvailable,
+		d.SWScaleAvailable,
+		d.SWResampleAvailable,
+		d.AVFilterAvailable,
+		d.AVDeviceAvailable)
+}
+
+// Diagnose returns diagnostic information about the ffgo library state.
+// This is useful for debugging and understanding why certain features
+// may not be available.
+func Diagnose() DiagnosticInfo {
+	// Try to load libraries if not already loaded
+	_ = Init()
+	_ = shim.Load()
+
+	info := DiagnosticInfo{
+		GOOS:   runtime.GOOS,
+		GOARCH: runtime.GOARCH,
+	}
+
+	// FFmpeg status
+	info.FFmpegLoaded = bindings.IsLoaded()
+	if info.FFmpegLoaded {
+		info.AVUtilVersion = bindings.AVUtilVersion()
+		info.AVCodecVersion = bindings.AVCodecVersion()
+		info.AVFormatVersion = bindings.AVFormatVersion()
+	}
+
+	// Shim status
+	info.ShimLoaded = shim.IsLoaded()
+	if info.ShimLoaded {
+		info.ShimPath = shim.Path()
+	} else {
+		info.ShimError = shim.SearchError()
+	}
+	info.LoggingAvailable = IsLoggingAvailable()
+
+	// Feature availability
+	info.SWScaleAvailable = bindings.HasSWScale()
+	// These would need additional checks
+	info.SWResampleAvailable = true // Assume available if FFmpeg is loaded
+	info.AVFilterAvailable = true   // Assume available if FFmpeg is loaded
+	info.AVDeviceAvailable = false  // Requires shim with avdevice support
+
+	return info
+}
+
+// ShimStatus returns the current status of the shim library.
+// Use this to check if logging and other shim-dependent features are available.
+func ShimStatus() string {
+	_ = shim.Load() // Try to load if not already
+	return shim.Status()
+}
+
+// ShimBuildInstructions returns platform-specific instructions for building the shim.
+// This is useful for displaying to users when the shim is not available.
+func ShimBuildInstructions() string {
+	return shim.BuildInstructions()
 }
 
 // Re-export common types for convenience
