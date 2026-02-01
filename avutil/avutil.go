@@ -27,22 +27,22 @@ type HWDeviceContext = unsafe.Pointer
 // HWFramesContext is an opaque FFmpeg AVBufferRef for hardware frames context.
 type HWFramesContext = unsafe.Pointer
 
-// Function bindings - registered when init() is called
-var (
-	avFrameAlloc        func() unsafe.Pointer
-	avFrameFree         func(frame *unsafe.Pointer)
-	avFrameRef          func(dst, src unsafe.Pointer) int32
-	avFrameUnref        func(frame unsafe.Pointer)
-	avFrameGetBuffer    func(frame unsafe.Pointer, align int32) int32
-	avFrameMakeWritable func(frame unsafe.Pointer) int32
+	// Function bindings - registered when init() is called
+	var (
+		avFrameAlloc        func() uintptr
+		avFrameFree         func(frame *unsafe.Pointer)
+		avFrameRef          func(dst, src unsafe.Pointer) int32
+		avFrameUnref        func(frame unsafe.Pointer)
+		avFrameGetBuffer    func(frame unsafe.Pointer, align int32) int32
+		avFrameMakeWritable func(frame unsafe.Pointer) int32
 
-	avMalloc func(size uintptr) unsafe.Pointer
-	avFree   func(ptr unsafe.Pointer)
-	avFreep  func(ptr *unsafe.Pointer)
+		avMalloc func(size uintptr) uintptr
+		avFree   func(ptr unsafe.Pointer)
+		avFreep  func(ptr *unsafe.Pointer)
 
-	avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
-	avDictGet  func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) unsafe.Pointer
-	avDictFree func(pm *unsafe.Pointer)
+		avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
+		avDictGet  func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) uintptr
+		avDictFree func(pm *unsafe.Pointer)
 
 	avStrerror func(errnum int32, errbuf unsafe.Pointer, errbufSize uintptr) int32
 
@@ -55,16 +55,16 @@ var (
 	avOptSetInt    func(obj unsafe.Pointer, name string, val int64, searchFlags int32) int32
 	avOptSetDouble func(obj unsafe.Pointer, name string, val float64, searchFlags int32) int32
 
-	// Hardware context functions
-	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
-	avHWDeviceFindTypeByName func(name string) int32
-	avHWDeviceGetTypeName    func(deviceType int32) unsafe.Pointer
-	avHWFrameTransferData    func(dst, src unsafe.Pointer, flags int32) int32
+		// Hardware context functions
+		avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
+		avHWDeviceFindTypeByName func(name string) int32
+		avHWDeviceGetTypeName    func(deviceType int32) uintptr
+		avHWFrameTransferData    func(dst, src unsafe.Pointer, flags int32) int32
 
-	// Buffer reference functions
-	avBufferCreate func(data unsafe.Pointer, size int32, freeCb uintptr, opaque unsafe.Pointer, flags int32) unsafe.Pointer
-	avBufferRef    func(buf unsafe.Pointer) unsafe.Pointer
-	avBufferUnref  func(buf *unsafe.Pointer)
+		// Buffer reference functions
+		avBufferCreate func(data unsafe.Pointer, size int32, freeCb uintptr, opaque unsafe.Pointer, flags int32) uintptr
+		avBufferRef    func(buf unsafe.Pointer) uintptr
+		avBufferUnref  func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
@@ -136,7 +136,7 @@ func FrameAlloc() Frame {
 	if avFrameAlloc == nil {
 		return nil
 	}
-	return avFrameAlloc()
+	return unsafe.Pointer(avFrameAlloc())
 }
 
 // FrameFree frees an AVFrame and sets the pointer to nil.
@@ -416,7 +416,7 @@ func Malloc(size uintptr) unsafe.Pointer {
 	if avMalloc == nil {
 		return nil
 	}
-	return avMalloc(size)
+	return unsafe.Pointer(avMalloc(size))
 }
 
 // Free frees memory allocated by Malloc.
@@ -588,7 +588,7 @@ func HWDeviceGetTypeName(deviceType HWDeviceType) string {
 	if avHWDeviceGetTypeName == nil {
 		return ""
 	}
-	ptr := avHWDeviceGetTypeName(int32(deviceType))
+	ptr := unsafe.Pointer(avHWDeviceGetTypeName(int32(deviceType)))
 	if ptr == nil {
 		return ""
 	}
@@ -616,7 +616,7 @@ func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque unsafe.P
 	if avBufferCreate == nil || data == nil || size <= 0 {
 		return nil
 	}
-	return avBufferCreate(data, int32(size), freeCb, opaque, flags)
+	return unsafe.Pointer(avBufferCreate(data, int32(size), freeCb, opaque, flags))
 }
 
 // NewBufferRef creates a new reference to a buffer.
@@ -624,7 +624,7 @@ func NewBufferRef(buf AVBufferRef) AVBufferRef {
 	if avBufferRef == nil || buf == nil {
 		return nil
 	}
-	return avBufferRef(buf)
+	return unsafe.Pointer(avBufferRef(buf))
 }
 
 // FreeBufferRef unreferences a buffer and sets the pointer to nil.

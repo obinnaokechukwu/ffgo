@@ -27,11 +27,11 @@ type Parameters = unsafe.Pointer
 
 // Function bindings
 var (
-	avcodecFindDecoder       func(id int32) unsafe.Pointer
-	avcodecFindEncoder       func(id int32) unsafe.Pointer
-	avcodecFindDecoderByName func(name string) unsafe.Pointer
-	avcodecFindEncoderByName func(name string) unsafe.Pointer
-	avcodecAllocContext3     func(codec unsafe.Pointer) unsafe.Pointer
+	avcodecFindDecoder       func(id int32) uintptr
+	avcodecFindEncoder       func(id int32) uintptr
+	avcodecFindDecoderByName func(name string) uintptr
+	avcodecFindEncoderByName func(name string) uintptr
+	avcodecAllocContext3     func(codec unsafe.Pointer) uintptr
 	avcodecFreeContext       func(ctx *unsafe.Pointer)
 	avcodecOpen2             func(ctx, codec unsafe.Pointer, options *unsafe.Pointer) int32
 	avcodecClose             func(ctx unsafe.Pointer) int32
@@ -44,7 +44,7 @@ var (
 	avcodecParametersFromCtx func(par, ctx unsafe.Pointer) int32
 	avcodecParametersCopy    func(dst, src unsafe.Pointer) int32
 
-	avPacketAlloc func() unsafe.Pointer
+	avPacketAlloc func() uintptr
 	avPacketFree  func(pkt *unsafe.Pointer)
 	avPacketRef   func(dst, src unsafe.Pointer) int32
 	avPacketUnref func(pkt unsafe.Pointer)
@@ -108,7 +108,7 @@ func FindDecoder(id CodecID) Codec {
 	if avcodecFindDecoder == nil {
 		return nil
 	}
-	return avcodecFindDecoder(int32(id))
+	return unsafe.Pointer(avcodecFindDecoder(int32(id)))
 }
 
 // FindEncoder finds an encoder by codec ID.
@@ -116,7 +116,7 @@ func FindEncoder(id CodecID) Codec {
 	if avcodecFindEncoder == nil {
 		return nil
 	}
-	return avcodecFindEncoder(int32(id))
+	return unsafe.Pointer(avcodecFindEncoder(int32(id)))
 }
 
 // FindDecoderByName finds a decoder by name.
@@ -124,7 +124,7 @@ func FindDecoderByName(name string) Codec {
 	if avcodecFindDecoderByName == nil {
 		return nil
 	}
-	codec := avcodecFindDecoderByName(name)
+	codec := unsafe.Pointer(avcodecFindDecoderByName(name))
 	runtime.KeepAlive(name)
 	return codec
 }
@@ -134,7 +134,7 @@ func FindEncoderByName(name string) Codec {
 	if avcodecFindEncoderByName == nil {
 		return nil
 	}
-	codec := avcodecFindEncoderByName(name)
+	codec := unsafe.Pointer(avcodecFindEncoderByName(name))
 	runtime.KeepAlive(name)
 	return codec
 }
@@ -144,7 +144,7 @@ func AllocContext3(codec Codec) Context {
 	if avcodecAllocContext3 == nil {
 		return nil
 	}
-	return avcodecAllocContext3(codec)
+	return unsafe.Pointer(avcodecAllocContext3(codec))
 }
 
 // FreeContext frees a codec context.
@@ -310,7 +310,7 @@ func PacketAlloc() Packet {
 	if avPacketAlloc == nil {
 		return nil
 	}
-	return avPacketAlloc()
+	return unsafe.Pointer(avPacketAlloc())
 }
 
 // PacketFree frees a packet.

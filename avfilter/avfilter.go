@@ -30,17 +30,17 @@ var (
 	initErr     error
 )
 
-// Function bindings
-var (
-	// Graph management
-	avfilter_graph_alloc         func() Graph
-	avfilter_graph_free          func(graph *Graph)
-	avfilter_graph_config        func(graphctx, log_ctx Graph) int32
-	avfilter_graph_parse2        func(graph Graph, filters *byte, inputs, outputs *InOut) int32
-	avfilter_graph_create_filter func(filt_ctx *Context, filt Filter, name, args *byte, opaque, graph_ctx unsafe.Pointer) int32
+	// Function bindings
+	var (
+		// Graph management
+		avfilter_graph_alloc         func() uintptr
+		avfilter_graph_free          func(graph *Graph)
+		avfilter_graph_config        func(graphctx, log_ctx Graph) int32
+		avfilter_graph_parse2        func(graph Graph, filters *byte, inputs, outputs *InOut) int32
+		avfilter_graph_create_filter func(filt_ctx *Context, filt Filter, name, args *byte, opaque, graph_ctx unsafe.Pointer) int32
 
-	// Filter lookup
-	avfilter_get_by_name func(name *byte) Filter
+		// Filter lookup
+		avfilter_get_by_name func(name *byte) uintptr
 
 	// Filter linking
 	avfilter_link func(src Context, srcpad uint32, dst Context, dstpad uint32) int32
@@ -50,9 +50,9 @@ var (
 	av_buffersink_get_frame_flags func(ctx Context, frame unsafe.Pointer, flags int32) int32
 	av_buffersink_get_frame       func(ctx Context, frame unsafe.Pointer) int32
 
-	// InOut management
-	avfilter_inout_alloc func() InOut
-	avfilter_inout_free  func(inout *InOut)
+		// InOut management
+		avfilter_inout_alloc func() uintptr
+		avfilter_inout_free  func(inout *InOut)
 
 	// Version
 	avfilter_version func() uint32
@@ -135,7 +135,7 @@ func GraphAlloc() Graph {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return avfilter_graph_alloc()
+	return unsafe.Pointer(avfilter_graph_alloc())
 }
 
 // GraphFree frees a filter graph and all associated filters.
@@ -215,7 +215,7 @@ func GetByName(name string) Filter {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return avfilter_get_by_name(cString(name))
+	return unsafe.Pointer(avfilter_get_by_name(cString(name)))
 }
 
 // Link links two filter contexts together.
@@ -276,7 +276,7 @@ func InOutAlloc() InOut {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return avfilter_inout_alloc()
+	return unsafe.Pointer(avfilter_inout_alloc())
 }
 
 // InOutFree frees an AVFilterInOut structure.
