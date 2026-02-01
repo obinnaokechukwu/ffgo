@@ -54,7 +54,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 
 	// Convert target to stream time base
 	// targetTS is in microseconds (AV_TIME_BASE = 1000000)
-	targetPTS := targetTS * int64(tbDen) / (int64(tbNum) * 1000000)
+	var targetPTS int64
 	if tbNum == 0 {
 		targetPTS = targetTS * int64(tbDen) / 1000000
 	} else {

@@ -516,8 +516,8 @@ func (m *Muxer) WriteTrailer() error {
 
 // flushEncoder flushes remaining packets from an encoder.
 func (m *Muxer) flushEncoder(ms *MuxerStream) {
-	// Send flush signal
-	avcodec.SendFrame(ms.codecCtx, nil)
+	// Send flush signal (errors during flush are non-fatal)
+	_ = avcodec.SendFrame(ms.codecCtx, nil)
 
 	// Receive and write remaining packets
 	for {
@@ -531,7 +531,7 @@ func (m *Muxer) flushEncoder(ms *MuxerStream) {
 		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(ms.stream)
 		streamTb := NewRational(streamTbNum, streamTbDen)
 		avcodec.RescalePacketTS(ms.encoder.packet, ms.timeBase, streamTb)
-		avformat.InterleavedWriteFrame(m.formatCtx, ms.encoder.packet)
+		_ = avformat.InterleavedWriteFrame(m.formatCtx, ms.encoder.packet)
 	}
 }
 
@@ -560,9 +560,9 @@ func (m *Muxer) Close() error {
 		}
 	}
 
-	// Close I/O context
+	// Close I/O context (errors during cleanup are non-fatal)
 	if m.ioCtx != nil {
-		avformat.IOCloseP(&m.ioCtx)
+		_ = avformat.IOCloseP(&m.ioCtx)
 	}
 
 	// Free format context

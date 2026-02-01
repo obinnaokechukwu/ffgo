@@ -25,9 +25,6 @@ type BitstreamFilter struct {
 // bsfContext is an opaque FFmpeg AVBSFContext pointer.
 type bsfContext = unsafe.Pointer
 
-// bsfFilter is an opaque FFmpeg AVBitStreamFilter pointer.
-type bsfFilter = unsafe.Pointer
-
 // BSF function bindings
 var (
 	avBsfGetByName     func(name string) unsafe.Pointer

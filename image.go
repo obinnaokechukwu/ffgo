@@ -271,8 +271,8 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 		return nil, errors.New("ffgo: no video stream")
 	}
 
-	// Save current position - seek back to beginning
-	avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
+	// Save current position - seek back to beginning (errors are non-fatal)
+	_ = avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
 
 	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
 	if stream == nil {
@@ -329,8 +329,8 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 		avcodec.PacketUnref(d.packet)
 	}
 
-	// Seek back to beginning
-	avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
+	// Seek back to beginning (errors are non-fatal)
+	_ = avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
 	if d.videoCodecCtx != nil {
 		avcodec.FlushBuffers(d.videoCodecCtx)
 	}

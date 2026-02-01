@@ -160,15 +160,15 @@ func (e *Encoder) AddAttachment(att Attachment) error {
 	// Set extradata to the attachment content
 	avformat.SetCodecParExtradata(codecPar, att.Data)
 
-	// Set metadata on the stream
+	// Set metadata on the stream (errors are non-fatal for metadata)
 	if att.Filename != "" {
-		avformat.SetStreamMetadata(stream, "filename", att.Filename)
+		_ = avformat.SetStreamMetadata(stream, "filename", att.Filename)
 	}
 	if att.MimeType != "" {
-		avformat.SetStreamMetadata(stream, "mimetype", att.MimeType)
+		_ = avformat.SetStreamMetadata(stream, "mimetype", att.MimeType)
 	}
 	if att.Description != "" {
-		avformat.SetStreamMetadata(stream, "title", att.Description)
+		_ = avformat.SetStreamMetadata(stream, "title", att.Description)
 	}
 
 	return nil

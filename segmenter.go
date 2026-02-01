@@ -17,10 +17,9 @@ type HLSSegmenterConfig struct {
 	AVOptions              map[string]string
 }
 
-func NewHLSSegmenter(playlistPath string, cfg *HLSSegmenterConfig) (*Muxer, error) {
-	if cfg == nil {
-		cfg = &HLSSegmenterConfig{}
-	}
+func NewHLSSegmenter(playlistPath string, _ *HLSSegmenterConfig) (*Muxer, error) {
+	// Note: cfg is passed for API consistency but not used here.
+	// Callers should use cfg.HeaderOptions() with Muxer.WriteHeaderWithOptions().
 	return NewMuxer(playlistPath, "hls")
 }
 
@@ -59,10 +58,9 @@ type DASHSegmenterConfig struct {
 	AVOptions   map[string]string
 }
 
-func NewDASHSegmenter(mpdPath string, cfg *DASHSegmenterConfig) (*Muxer, error) {
-	if cfg == nil {
-		cfg = &DASHSegmenterConfig{}
-	}
+func NewDASHSegmenter(mpdPath string, _ *DASHSegmenterConfig) (*Muxer, error) {
+	// Note: cfg is passed for API consistency but not used here.
+	// Callers should use cfg.HeaderOptions() with Muxer.WriteHeaderWithOptions().
 	return NewMuxer(mpdPath, "dash")
 }
 

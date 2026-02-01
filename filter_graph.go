@@ -470,7 +470,10 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 		if newFrame == nil {
 			return frames, errors.New("ffgo: failed to allocate output frame")
 		}
-		avutil.FrameRef(newFrame, g.outFrame)
+		if err := avutil.FrameRef(newFrame, g.outFrame); err != nil {
+			avutil.FrameFree(&newFrame)
+			return frames, fmt.Errorf("ffgo: failed to reference frame: %w", err)
+		}
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)
 		*framePtr = Frame{ptr: newFrame, owned: true}
@@ -508,7 +511,10 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 		if newFrame == nil {
 			return frames, errors.New("ffgo: failed to allocate output frame")
 		}
-		avutil.FrameRef(newFrame, g.outFrame)
+		if err := avutil.FrameRef(newFrame, g.outFrame); err != nil {
+			avutil.FrameFree(&newFrame)
+			return frames, fmt.Errorf("ffgo: failed to reference frame: %w", err)
+		}
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)
 		*framePtr = Frame{ptr: newFrame, owned: true}
