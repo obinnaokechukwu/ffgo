@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/nonibytes/ffgo.svg)](https://pkg.go.dev/github.com/nonibytes/ffgo)
 [![Go Report Card](https://goreportcard.com/badge/github.com/nonibytes/ffgo)](https://goreportcard.com/report/github.com/nonibytes/ffgo)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Pure Go FFmpeg bindings without CGO. Decode, encode, transcode, and process media files with zero C dependencies at build time.
 
@@ -344,7 +344,7 @@ Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
+Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 FFmpeg is licensed under LGPL/GPL. Ensure your usage complies with FFmpeg's license.
 
