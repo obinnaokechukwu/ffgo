@@ -72,7 +72,7 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 
 	// Determine which streams to copy
 	var streamsToCopy []int
-	if cfg != nil && len(cfg.InputStreams) > 0 {
+	if len(cfg.InputStreams) > 0 {
 		streamsToCopy = cfg.InputStreams
 	} else {
 		// Copy all streams
@@ -210,7 +210,7 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 	}
 
 	// Reference the packet (don't copy data, just increment refcount)
-	avcodec.PacketRef(r.packet, pkt)
+	_ = avcodec.PacketRef(r.packet, pkt)
 
 	// Set output stream index
 	avcodec.SetPacketStreamIndex(r.packet, int32(outputIdx))
