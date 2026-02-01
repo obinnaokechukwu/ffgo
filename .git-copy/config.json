@@ -6,9 +6,40 @@
     "exclude": [
       ".git-copy/**",
       "CLAUDE.md",
-      ".env"
+      ".env",
+      "docs/**"
     ],
-    "opt_in": []
+    "opt_in": [
+      "docs/internal-design.md",
+      "docs/gap-analysis.md",
+      "docs/user-guide.md"
+    ]
   },
-  "targets": []
+  "targets": [
+    {
+      "label": "github",
+      "provider": "github",
+      "account": "obinnaokechukwu",
+      "repo_name": "ffgo",
+      "repo_url": "git@github.com:obinnaokechukwu/ffgo.git",
+      "description": "Pure Go bindings for FFmpeg using purego - no CGO required",
+      "topics": [
+        "audio",
+        "cgo-free",
+        "ffmpeg",
+        "go",
+        "golang",
+        "multimedia",
+        "purego",
+        "transcoding",
+        "video",
+        "video-processing"
+      ],
+      "auth": {
+        "method": "gh"
+      },
+      "initial_history_mode": "full",
+      "initial_sync_at": "2026-02-01T15:00:47-05:00"
+    }
+  ]
 }
