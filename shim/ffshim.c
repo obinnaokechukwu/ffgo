@@ -471,6 +471,34 @@ void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels) {
 #endif
 }
 
+void* ffshim_codecctx_hw_device_ctx(void *ctx) {
+    if (ctx == NULL) {
+        return NULL;
+    }
+    return (void*)((AVCodecContext*)ctx)->hw_device_ctx;
+}
+
+void ffshim_codecctx_set_hw_device_ctx(void *ctx, void *ref) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->hw_device_ctx = (AVBufferRef*)ref;
+}
+
+void* ffshim_codecctx_hw_frames_ctx(void *ctx) {
+    if (ctx == NULL) {
+        return NULL;
+    }
+    return (void*)((AVCodecContext*)ctx)->hw_frames_ctx;
+}
+
+void ffshim_codecctx_set_hw_frames_ctx(void *ctx, void *ref) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->hw_frames_ctx = (AVBufferRef*)ref;
+}
+
 /* ============================================================================
  * FORMAT FIELD HELPERS (OPTIONAL)
  * ============================================================================ */
