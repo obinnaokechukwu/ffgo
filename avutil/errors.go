@@ -5,22 +5,23 @@ package avutil
 import (
 	"errors"
 	"fmt"
+	"syscall"
 )
 
 // Common FFmpeg error codes (AVERROR values)
 const (
-	AVERROR_EOF               int32 = -541478725  // End of file
-	AVERROR_EAGAIN            int32 = -11         // Resource temporarily unavailable
-	AVERROR_EINVAL            int32 = -22         // Invalid argument
-	AVERROR_ENOMEM            int32 = -12         // Out of memory
-	AVERROR_DECODER_NOT_FOUND int32 = -1128613112 // Decoder not found
-	AVERROR_ENCODER_NOT_FOUND int32 = -1129203192 // Encoder not found
-	AVERROR_DEMUXER_NOT_FOUND int32 = -1296385272 // Demuxer not found
-	AVERROR_MUXER_NOT_FOUND   int32 = -1381258232 // Muxer not found
-	AVERROR_STREAM_NOT_FOUND  int32 = -1381258232 // Stream not found
-	AVERROR_INVALIDDATA       int32 = -1094995529 // Invalid data
-	AVERROR_BUG               int32 = -558323010  // Bug detected
-	AVERROR_UNKNOWN           int32 = -1313558101 // Unknown error
+	AVERROR_EOF               int32 = -541478725             // End of file
+	AVERROR_EAGAIN            int32 = -int32(syscall.EAGAIN) // Resource temporarily unavailable
+	AVERROR_EINVAL            int32 = -int32(syscall.EINVAL) // Invalid argument
+	AVERROR_ENOMEM            int32 = -int32(syscall.ENOMEM) // Out of memory
+	AVERROR_DECODER_NOT_FOUND int32 = -1128613112            // Decoder not found
+	AVERROR_ENCODER_NOT_FOUND int32 = -1129203192            // Encoder not found
+	AVERROR_DEMUXER_NOT_FOUND int32 = -1296385272            // Demuxer not found
+	AVERROR_MUXER_NOT_FOUND   int32 = -1381258232            // Muxer not found
+	AVERROR_STREAM_NOT_FOUND  int32 = -1381258232            // Stream not found
+	AVERROR_INVALIDDATA       int32 = -1094995529            // Invalid data
+	AVERROR_BUG               int32 = -558323010             // Bug detected
+	AVERROR_UNKNOWN           int32 = -1313558101            // Unknown error
 )
 
 // Error represents an FFmpeg error.
