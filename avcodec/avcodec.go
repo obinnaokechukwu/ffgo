@@ -720,6 +720,9 @@ func SetCtxSampleRate(ctx Context, sampleRate int32) {
 	if err := avutil.OptSetInt(ctx, "sample_rate", int64(sampleRate), 0); err == nil {
 		return
 	}
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleRate)) = sampleRate
 }
 
@@ -747,10 +750,49 @@ func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
 		return
 	}
 	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if name := sampleFormatName(sampleFmt); name != "" {
+		if err := avutil.OptSet(ctx, "sample_fmt", name, 0); err == nil {
+			return
+		}
+	}
 	if err := avutil.OptSetInt(ctx, "sample_fmt", int64(sampleFmt), 0); err == nil {
 		return
 	}
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt)) = sampleFmt
+}
+
+func sampleFormatName(sampleFmt int32) string {
+	switch avutil.SampleFormat(sampleFmt) {
+	case avutil.SampleFormatU8:
+		return "u8"
+	case avutil.SampleFormatS16:
+		return "s16"
+	case avutil.SampleFormatS32:
+		return "s32"
+	case avutil.SampleFormatFlt:
+		return "flt"
+	case avutil.SampleFormatDbl:
+		return "dbl"
+	case avutil.SampleFormatU8P:
+		return "u8p"
+	case avutil.SampleFormatS16P:
+		return "s16p"
+	case avutil.SampleFormatS32P:
+		return "s32p"
+	case avutil.SampleFormatFltP:
+		return "fltp"
+	case avutil.SampleFormatDblP:
+		return "dblp"
+	case avutil.SampleFormatS64:
+		return "s64"
+	case avutil.SampleFormatS64P:
+		return "s64p"
+	default:
+		return ""
+	}
 }
 
 // GetCtxFrameSize returns the frame size from codec context.
