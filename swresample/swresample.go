@@ -71,12 +71,17 @@ func initLibrary() error {
 	purego.RegisterLibFunc(&swr_close, libSWResample, "swr_close")
 
 	// Try to bind FFmpeg 5.1+ API first
-	purego.RegisterLibFunc(&swr_alloc_set_opts2, libSWResample, "swr_alloc_set_opts2")
+	registerOptionalLibFunc(&swr_alloc_set_opts2, libSWResample, "swr_alloc_set_opts2")
 
 	// Fallback to legacy API
-	purego.RegisterLibFunc(&swr_alloc_set_opts, libSWResample, "swr_alloc_set_opts")
+	registerOptionalLibFunc(&swr_alloc_set_opts, libSWResample, "swr_alloc_set_opts")
 
 	return nil
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() { _ = recover() }()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // Alloc allocates a new SwrContext
@@ -225,14 +230,14 @@ const (
 
 // Channel layout constants (legacy uint64 bitmask format)
 const (
-	ChannelLayoutMono        int64 = 0x4        // AV_CH_FRONT_CENTER
-	ChannelLayoutStereo      int64 = 0x3        // AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT
-	ChannelLayout2Point1     int64 = 0xB        // AV_CH_LAYOUT_2POINT1
-	ChannelLayoutSurround    int64 = 0x7        // AV_CH_LAYOUT_SURROUND
-	ChannelLayout4Point0     int64 = 0x107      // AV_CH_LAYOUT_4POINT0
-	ChannelLayout5Point0     int64 = 0x607      // AV_CH_LAYOUT_5POINT0
-	ChannelLayout5Point1     int64 = 0x60F      // AV_CH_LAYOUT_5POINT1
-	ChannelLayout6Point1     int64 = 0x70F      // AV_CH_LAYOUT_6POINT1
-	ChannelLayout7Point1     int64 = 0x63F      // AV_CH_LAYOUT_7POINT1
-	ChannelLayout7Point1Wide int64 = 0xFF       // AV_CH_LAYOUT_7POINT1_WIDE
+	ChannelLayoutMono        int64 = 0x4   // AV_CH_FRONT_CENTER
+	ChannelLayoutStereo      int64 = 0x3   // AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT
+	ChannelLayout2Point1     int64 = 0xB   // AV_CH_LAYOUT_2POINT1
+	ChannelLayoutSurround    int64 = 0x7   // AV_CH_LAYOUT_SURROUND
+	ChannelLayout4Point0     int64 = 0x107 // AV_CH_LAYOUT_4POINT0
+	ChannelLayout5Point0     int64 = 0x607 // AV_CH_LAYOUT_5POINT0
+	ChannelLayout5Point1     int64 = 0x60F // AV_CH_LAYOUT_5POINT1
+	ChannelLayout6Point1     int64 = 0x70F // AV_CH_LAYOUT_6POINT1
+	ChannelLayout7Point1     int64 = 0x63F // AV_CH_LAYOUT_7POINT1
+	ChannelLayout7Point1Wide int64 = 0xFF  // AV_CH_LAYOUT_7POINT1_WIDE
 )

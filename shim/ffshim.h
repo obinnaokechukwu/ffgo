@@ -137,6 +137,7 @@ void ffshim_codecctx_time_base(void *ctx, int *out_num, int *out_den);
 void ffshim_codecctx_set_time_base(void *ctx, int num, int den);
 void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den);
 void ffshim_codecctx_set_framerate(void *ctx, int num, int den);
+void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels);
 
 #ifdef __cplusplus
 }

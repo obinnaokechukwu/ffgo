@@ -10,6 +10,8 @@
 #include <libavutil/rational.h>
 #include <libavutil/error.h>
 #include <libavutil/avutil.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/version.h>
 #include <libavutil/mem.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
@@ -440,4 +442,17 @@ void ffshim_codecctx_set_framerate(void *ctx, int num, int den) {
         return;
     }
     ((AVCodecContext*)ctx)->framerate = (AVRational){num, den};
+}
+
+void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels) {
+#if LIBAVUTIL_VERSION_MAJOR >= 57
+    if (ctx == NULL) {
+        return;
+    }
+    AVCodecContext *c = (AVCodecContext*)ctx;
+    av_channel_layout_default(&c->ch_layout, nb_channels);
+#else
+    (void)ctx;
+    (void)nb_channels;
+#endif
 }
