@@ -37,12 +37,13 @@ func TestErrNotLoaded(t *testing.T) {
 // Integration test - only runs if FFmpeg is available
 func TestLoadFFmpeg(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping FFmpeg load test in short mode")
+		t.Log("Skipping FFmpeg load test in short mode")
+		return
 	}
 
 	err := Load()
 	if err != nil {
-		t.Skipf("FFmpeg not available: %v", err)
+		t.Fatalf("FFmpeg not available: %v", err)
 	}
 
 	if !IsLoaded() {

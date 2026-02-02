@@ -76,7 +76,8 @@ func TestFormatLibraryName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name+"_"+tt.goos, func(t *testing.T) {
 			if runtime.GOOS != tt.goos {
-				t.Skipf("test only applies to %s", tt.goos)
+				t.Logf("test only applies to %s", tt.goos)
+				return
 			}
 			got := FormatLibraryName(tt.name, tt.version)
 			if got != tt.want {

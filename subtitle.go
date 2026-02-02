@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/obinnaokechukwu/ffgo/avutil"
 )
 
 // SubtitleRenderer burns subtitles into video frames using FFmpeg's subtitles filter.
@@ -15,6 +17,9 @@ import (
 type SubtitleRenderer struct {
 	graph        *FilterGraph
 	subtitlePath string
+	filterStr    string
+	width        int
+	height       int
 }
 
 // SubtitleRendererOptions configures subtitle rendering.
@@ -135,6 +140,9 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 	return &SubtitleRenderer{
 		graph:        graph,
 		subtitlePath: subtitlePath,
+		filterStr:    filterStr,
+		width:        width,
+		height:       height,
 	}, nil
 }
 
@@ -144,8 +152,30 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 // Returns a new frame with subtitles burned in. The returned frame is owned
 // by the caller and must be freed.
 func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
+	if frame.IsNil() {
+		return Frame{}, errors.New("ffgo: input frame is nil")
+	}
+
+	inFmt := PixelFormat(avutil.GetFrameFormat(frame.ptr))
+	if inFmt == PixelFormatNone {
+		return Frame{}, errors.New("ffgo: input frame has unknown pixel format")
+	}
+
 	if r.graph == nil {
 		return Frame{}, errors.New("ffgo: subtitle renderer is closed")
+	}
+
+	// Recreate the filter graph if the input pixel format differs from what the current
+	// buffersrc was configured for. This allows SubtitleRenderer to work with decoded
+	// frames whose pixel format is build/codec-dependent (e.g., yuv444p vs yuv420p).
+	if r.graph.srcPixFmt != inFmt {
+		_ = r.graph.Close()
+
+		graph, err := NewVideoFilterGraph(r.filterStr, r.width, r.height, inFmt)
+		if err != nil {
+			return Frame{}, fmt.Errorf("ffgo: failed to recreate subtitle filter: %w", err)
+		}
+		r.graph = graph
 	}
 
 	frames, err := r.graph.Filter(&frame)
@@ -208,11 +238,11 @@ func escapeFilterPath(path string) string {
 type SubtitleFormat int
 
 const (
-	SubtitleFormatSRT    SubtitleFormat = iota // SubRip text format
-	SubtitleFormatASS                          // Advanced SubStation Alpha
-	SubtitleFormatSSA                          // SubStation Alpha
-	SubtitleFormatWebVTT                       // Web Video Text Tracks
-	SubtitleFormatMOVText                      // QuickTime text
+	SubtitleFormatSRT     SubtitleFormat = iota // SubRip text format
+	SubtitleFormatASS                           // Advanced SubStation Alpha
+	SubtitleFormatSSA                           // SubStation Alpha
+	SubtitleFormatWebVTT                        // Web Video Text Tracks
+	SubtitleFormatMOVText                       // QuickTime text
 )
 
 // String returns the file extension for the subtitle format.

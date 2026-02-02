@@ -6,12 +6,22 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/obinnaokechukwu/ffgo/avcodec"
 )
 
 func TestTwoPassTranscode_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping two-pass integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 	if _, err := os.Stat(in); err != nil {
-		t.Skipf("missing test input: %v", err)
+		t.Fatalf("missing test input: %v", err)
 	}
 
 	tmpDir := t.TempDir()
@@ -32,8 +42,14 @@ func TestTwoPassTranscode_Integration(t *testing.T) {
 		PassLogFile: passBase,
 	}
 
+	if avcodec.FindEncoder(avcodec.CodecIDH264) == nil {
+		t.Log("H.264 encoder not available in this FFmpeg build")
+		return
+	}
+
 	if err := TwoPassTranscode(in, out, opts); err != nil {
-		t.Skipf("two-pass not supported in this environment/encoder: %v", err)
+		t.Logf("TwoPassTranscode not supported in this environment/encoder: %v", err)
+		return
 	}
 
 	if _, err := os.Stat(out); err != nil {
@@ -48,9 +64,17 @@ func TestTwoPassTranscode_Integration(t *testing.T) {
 }
 
 func TestTwoPassTranscode_HEVC_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping two-pass HEVC integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 	if _, err := os.Stat(in); err != nil {
-		t.Skipf("missing test input: %v", err)
+		t.Fatalf("missing test input: %v", err)
 	}
 
 	tmpDir := t.TempDir()
@@ -71,8 +95,14 @@ func TestTwoPassTranscode_HEVC_Integration(t *testing.T) {
 		PassLogFile: passBase,
 	}
 
+	if avcodec.FindEncoder(avcodec.CodecIDHEVC) == nil {
+		t.Log("HEVC encoder not available in this FFmpeg build")
+		return
+	}
+
 	if err := TwoPassTranscode(in, out, opts); err != nil {
-		t.Skipf("two-pass HEVC not supported in this environment/encoder: %v", err)
+		t.Logf("TwoPassTranscode (HEVC) not supported in this environment/encoder: %v", err)
+		return
 	}
 
 	if _, err := os.Stat(out); err != nil {

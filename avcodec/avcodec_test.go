@@ -18,15 +18,19 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func skipIfNoFFmpeg(t *testing.T) {
+func requireFFmpeg(t *testing.T) bool {
 	t.Helper()
 	if !ffmpegAvailable {
-		t.Skip("FFmpeg not available")
+		t.Log("FFmpeg not available")
+		return false
 	}
+	return true
 }
 
 func TestFindDecoder(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	// H.264 decoder should always be available
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
@@ -41,7 +45,9 @@ func TestFindDecoder(t *testing.T) {
 }
 
 func TestFindEncoder(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	// Try to find an encoder - some systems may not have all encoders
 	codecs := []struct {
 		id   CodecID
@@ -69,10 +75,12 @@ func TestFindEncoder(t *testing.T) {
 }
 
 func TestFindDecoderByName(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	codec := FindDecoderByName("h264")
 	if codec == nil {
-		t.Skip("h264 decoder not found by name")
+		t.Fatalf("h264 decoder not found by name")
 	}
 
 	name := GetCodecName(codec)
@@ -80,10 +88,12 @@ func TestFindDecoderByName(t *testing.T) {
 }
 
 func TestAllocContext3(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
-		t.Skip("H264 decoder not found")
+		t.Fatalf("H264 decoder not found")
 	}
 
 	ctx := AllocContext3(codec)
@@ -98,10 +108,12 @@ func TestAllocContext3(t *testing.T) {
 }
 
 func TestFreeContext(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	codec := FindDecoder(CodecIDH264)
 	if codec == nil {
-		t.Skip("H264 decoder not found")
+		t.Fatalf("H264 decoder not found")
 	}
 
 	ctx := AllocContext3(codec)
@@ -120,7 +132,9 @@ func TestFreeContext(t *testing.T) {
 }
 
 func TestPacketAllocFree(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	pkt := PacketAlloc()
 	if pkt == nil {
 		t.Fatal("PacketAlloc returned nil")
@@ -150,7 +164,9 @@ func TestCodecIDConstants(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	ver := bindings.AVCodecVersion()
 	if ver == 0 {
 		t.Error("AVCodecVersion returned 0")

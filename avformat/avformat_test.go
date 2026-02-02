@@ -4,7 +4,6 @@ package avformat
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -20,44 +19,28 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func skipIfNoFFmpeg(t *testing.T) {
+func requireFFmpeg(t *testing.T) bool {
 	t.Helper()
 	if !ffmpegAvailable {
-		t.Skip("FFmpeg not available")
+		t.Log("FFmpeg not available")
+		return false
 	}
+	return true
 }
 
-// Helper to create a test video file using ffmpeg CLI
-func createTestVideo(t *testing.T) string {
+func testInputVideo(t *testing.T) string {
 	t.Helper()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.mp4")
-
-	// Create a 1-second test video using ffmpeg
-	cmd := exec.Command("ffmpeg", "-y",
-		"-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=30",
-		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-		"-c:v", "libx264", "-preset", "ultrafast",
-		"-c:a", "aac", "-b:a", "128k",
-		"-pix_fmt", "yuv420p",
-		testFile)
-
-	if err := cmd.Run(); err != nil {
-		t.Skipf("ffmpeg not available or failed: %v", err)
-		return ""
-	}
-
+	testFile := filepath.Join("..", "testdata", "test.mp4")
 	if _, err := os.Stat(testFile); err != nil {
-		t.Skipf("Test file not created: %v", err)
-		return ""
+		t.Fatalf("test input missing: %v", err)
 	}
-
 	return testFile
 }
 
 func TestAllocContext(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	ctx := AllocContext()
 	if ctx == nil {
 		t.Fatal("AllocContext returned nil")
@@ -66,11 +49,10 @@ func TestAllocContext(t *testing.T) {
 }
 
 func TestOpenInput(t *testing.T) {
-	skipIfNoFFmpeg(t)
-	testFile := createTestVideo(t)
-	if testFile == "" {
+	if !requireFFmpeg(t) {
 		return
 	}
+	testFile := testInputVideo(t)
 
 	var ctx FormatContext
 	err := OpenInput(&ctx, testFile, nil, nil)
@@ -85,11 +67,10 @@ func TestOpenInput(t *testing.T) {
 }
 
 func TestFindStreamInfo(t *testing.T) {
-	skipIfNoFFmpeg(t)
-	testFile := createTestVideo(t)
-	if testFile == "" {
+	if !requireFFmpeg(t) {
 		return
 	}
+	testFile := testInputVideo(t)
 
 	var ctx FormatContext
 	if err := OpenInput(&ctx, testFile, nil, nil); err != nil {
@@ -111,11 +92,10 @@ func TestFindStreamInfo(t *testing.T) {
 }
 
 func TestFindBestStream(t *testing.T) {
-	skipIfNoFFmpeg(t)
-	testFile := createTestVideo(t)
-	if testFile == "" {
+	if !requireFFmpeg(t) {
 		return
 	}
+	testFile := testInputVideo(t)
 
 	var ctx FormatContext
 	if err := OpenInput(&ctx, testFile, nil, nil); err != nil {
@@ -145,11 +125,10 @@ func TestFindBestStream(t *testing.T) {
 }
 
 func TestReadFrame(t *testing.T) {
-	skipIfNoFFmpeg(t)
-	testFile := createTestVideo(t)
-	if testFile == "" {
+	if !requireFFmpeg(t) {
 		return
 	}
+	testFile := testInputVideo(t)
 
 	var ctx FormatContext
 	if err := OpenInput(&ctx, testFile, nil, nil); err != nil {
@@ -186,7 +165,9 @@ func TestReadFrame(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	ver := bindings.AVFormatVersion()
 	if ver == 0 {
 		t.Error("AVFormatVersion returned 0")

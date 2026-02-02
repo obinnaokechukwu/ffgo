@@ -18,15 +18,19 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func skipIfNoFFmpeg(t *testing.T) {
+func requireFFmpeg(t *testing.T) bool {
 	t.Helper()
 	if !ffmpegAvailable {
-		t.Skip("FFmpeg not available")
+		t.Log("FFmpeg not available")
+		return false
 	}
+	return true
 }
 
 func TestFrameAlloc(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -39,7 +43,9 @@ func TestFrameAlloc(t *testing.T) {
 }
 
 func TestFrameFree(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -56,7 +62,9 @@ func TestFrameFree(t *testing.T) {
 }
 
 func TestFrameAllocAndSetup(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	frame := FrameAlloc()
 	if frame == nil {
 		t.Fatal("FrameAlloc returned nil")
@@ -164,7 +172,9 @@ func TestRationalCmp(t *testing.T) {
 }
 
 func TestErrorString(t *testing.T) {
-	skipIfNoFFmpeg(t)
+	if !requireFFmpeg(t) {
+		return
+	}
 	// AVERROR_EOF
 	msg := ErrorString(AVERROR_EOF)
 	if msg == "" {

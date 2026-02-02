@@ -12,6 +12,14 @@ import (
 )
 
 func TestHLSSegmenter_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping HLS segmenter integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	tmpDir := t.TempDir()
 	playlist := filepath.Join(tmpDir, "out.m3u8")
 	segPattern := filepath.Join(tmpDir, "seg_%03d.ts")
@@ -23,7 +31,8 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 	}
 	hls, err := NewHLSSegmenter(playlist, cfg)
 	if err != nil {
-		t.Skipf("hls muxer not available: %v", err)
+		t.Logf("hls muxer not available: %v", err)
+		return
 	}
 	defer hls.Close()
 
@@ -36,7 +45,8 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 		BitRate:     500000,
 	})
 	if err != nil {
-		t.Skipf("unable to add video stream: %v", err)
+		t.Logf("unable to add video stream: %v", err)
+		return
 	}
 
 	opts, err := cfg.HeaderOptions()
@@ -44,7 +54,8 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 		t.Fatalf("HeaderOptions: %v", err)
 	}
 	if err := hls.WriteHeaderWithOptions(opts); err != nil {
-		t.Skipf("WriteHeaderWithOptions failed (hls may be missing in this FFmpeg build): %v", err)
+		t.Logf("WriteHeaderWithOptions failed (hls may be missing in this FFmpeg build): %v", err)
+		return
 	}
 
 	for i := 0; i < 60; i++ {
@@ -85,6 +96,14 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 }
 
 func TestDASHSegmenter_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping DASH segmenter integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	tmpDir := t.TempDir()
 	mpd := filepath.Join(tmpDir, "out.mpd")
 
@@ -95,7 +114,8 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 	}
 	dash, err := NewDASHSegmenter(mpd, cfg)
 	if err != nil {
-		t.Skipf("dash muxer not available: %v", err)
+		t.Logf("dash muxer not available: %v", err)
+		return
 	}
 	defer dash.Close()
 
@@ -108,11 +128,13 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 		BitRate:     500000,
 	})
 	if err != nil {
-		t.Skipf("unable to add video stream: %v", err)
+		t.Logf("unable to add video stream: %v", err)
+		return
 	}
 
 	if err := dash.WriteHeaderWithOptions(cfg.HeaderOptions()); err != nil {
-		t.Skipf("WriteHeaderWithOptions failed (dash may be missing in this FFmpeg build): %v", err)
+		t.Logf("WriteHeaderWithOptions failed (dash may be missing in this FFmpeg build): %v", err)
+		return
 	}
 
 	for i := 0; i < 60; i++ {

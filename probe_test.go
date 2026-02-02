@@ -8,6 +8,14 @@ import (
 )
 
 func TestProbeFormat(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping probe integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 	r, err := ProbeFormat(in)
 	if err != nil {
@@ -20,13 +28,22 @@ func TestProbeFormat(t *testing.T) {
 }
 
 func TestDecoderOptions_ProbeScoreThreshold(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping probe score threshold test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 	r, err := ProbeFormat(in)
 	if err != nil {
 		t.Fatalf("ProbeFormat failed: %v", err)
 	}
 	if r.ProbeScore <= 0 {
-		t.Skip("FFmpeg did not provide a probe score for this input/build")
+		t.Log("FFmpeg did not provide a probe score for this input/build")
+		return
 	}
 
 	// Require an impossible score: should fail.

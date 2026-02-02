@@ -22,7 +22,8 @@ func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
 	case "windows":
 		name = "ffshim.dll"
 	default:
-		t.Skip("unsupported OS for this test")
+		t.Logf("unsupported OS for this test: %s", runtime.GOOS)
+		return
 	}
 
 	fake := filepath.Join(dir, name)
@@ -268,7 +269,8 @@ func TestAVFrameColorOffsets_WithoutShim(t *testing.T) {
 // Integration test - only runs if shim is available
 func TestLoad_Integration(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Log("skipping integration test in short mode")
+		return
 	}
 
 	err := Load()

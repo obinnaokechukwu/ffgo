@@ -81,7 +81,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avcodecAllocContext3, lib, "avcodec_alloc_context3")
 	purego.RegisterLibFunc(&avcodecFreeContext, lib, "avcodec_free_context")
 	purego.RegisterLibFunc(&avcodecOpen2, lib, "avcodec_open2")
-	purego.RegisterLibFunc(&avcodecClose, lib, "avcodec_close")
+	registerOptionalLibFunc(&avcodecClose, lib, "avcodec_close")
 	purego.RegisterLibFunc(&avcodecSendPacket, lib, "avcodec_send_packet")
 	purego.RegisterLibFunc(&avcodecReceiveFrame, lib, "avcodec_receive_frame")
 	purego.RegisterLibFunc(&avcodecSendFrame, lib, "avcodec_send_frame")
@@ -101,6 +101,11 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avsubtitleFree, lib, "avsubtitle_free")
 
 	bindingsRegistered = true
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() { _ = recover() }()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // FindDecoder finds a decoder by codec ID.
@@ -494,23 +499,23 @@ const (
 // AVCodecContext struct field offsets (for FFmpeg 6.x / avcodec 60.x)
 // Verified with offsetof() - IMPORTANT: These offsets vary between FFmpeg versions!
 const (
-	offsetCtxCodecType  = 12  // enum AVMediaType codec_type
-	offsetCtxCodecID    = 24  // enum AVCodecID codec_id
-	offsetCtxBitRate    = 56  // int64_t bit_rate
-	offsetCtxFlags      = 76  // int flags
-	offsetCtxTimeBase   = 100 // AVRational time_base
-	offsetCtxWidth      = 116 // int width
-	offsetCtxHeight     = 120 // int height
-	offsetCtxGopSize    = 132 // int gop_size
-	offsetCtxPixFmt     = 136 // enum AVPixelFormat pix_fmt
-	offsetCtxMaxBFrames = 160 // int max_b_frames
-	offsetCtxSampleRate = 352 // int sample_rate
-	offsetCtxSampleFmt  = 360 // enum AVSampleFormat sample_fmt
-	offsetCtxFrameSize  = 364 // int frame_size
-	offsetCtxFramerate      = 704 // AVRational framerate
-	offsetCtxHWFramesCtx    = 840 // AVBufferRef *hw_frames_ctx
-	offsetCtxHWDeviceCtx    = 864 // AVBufferRef *hw_device_ctx
-	offsetCtxChLayout       = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
+	offsetCtxCodecType   = 12  // enum AVMediaType codec_type
+	offsetCtxCodecID     = 24  // enum AVCodecID codec_id
+	offsetCtxBitRate     = 56  // int64_t bit_rate
+	offsetCtxFlags       = 76  // int flags
+	offsetCtxTimeBase    = 100 // AVRational time_base
+	offsetCtxWidth       = 116 // int width
+	offsetCtxHeight      = 120 // int height
+	offsetCtxGopSize     = 132 // int gop_size
+	offsetCtxPixFmt      = 136 // enum AVPixelFormat pix_fmt
+	offsetCtxMaxBFrames  = 160 // int max_b_frames
+	offsetCtxSampleRate  = 352 // int sample_rate
+	offsetCtxSampleFmt   = 360 // enum AVSampleFormat sample_fmt
+	offsetCtxFrameSize   = 364 // int frame_size
+	offsetCtxFramerate   = 704 // AVRational framerate
+	offsetCtxHWFramesCtx = 840 // AVBufferRef *hw_frames_ctx
+	offsetCtxHWDeviceCtx = 864 // AVBufferRef *hw_device_ctx
+	offsetCtxChLayout    = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
 )
 
 // GetCtxWidth returns the width from codec context.
@@ -703,8 +708,8 @@ const (
 
 // Common channel layout masks
 const (
-	ChannelLayoutMaskMono   uint64 = 0x4   // AV_CH_LAYOUT_MONO (FC)
-	ChannelLayoutMaskStereo uint64 = 0x3   // AV_CH_LAYOUT_STEREO (FL+FR)
+	ChannelLayoutMaskMono    uint64 = 0x4   // AV_CH_LAYOUT_MONO (FC)
+	ChannelLayoutMaskStereo  uint64 = 0x3   // AV_CH_LAYOUT_STEREO (FL+FR)
 	ChannelLayoutMask5Point1 uint64 = 0x60F // AV_CH_LAYOUT_5POINT1
 )
 

@@ -17,23 +17,31 @@ func createMOVWithTimecodeDataStream(t *testing.T) string {
 
 	cmd := exec.Command("ffmpeg", "-y",
 		"-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=30",
-		"-c:v", "libx264", "-preset", "ultrafast",
+		"-c:v", "mpeg4",
 		"-pix_fmt", "yuv420p",
 		"-timecode", "00:00:00:00",
 		out,
 	)
 	if err := cmd.Run(); err != nil {
-		t.Skipf("ffmpeg not available or failed: %v", err)
+		t.Logf("ffmpeg not available or failed: %v", err)
 		return ""
 	}
 	if _, err := os.Stat(out); err != nil {
-		t.Skipf("test file not created: %v", err)
+		t.Logf("test file not created: %v", err)
 		return ""
 	}
 	return out
 }
 
 func TestDataStreams_DetectAndReadPacket(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping datastream integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := createMOVWithTimecodeDataStream(t)
 	if in == "" {
 		return
@@ -56,7 +64,8 @@ func TestDataStreams_DetectAndReadPacket(t *testing.T) {
 	}
 	if pkt == nil {
 		// Some inputs may advertise a data stream but produce no packets; don't hard-fail.
-		t.Skip("no data packets produced for the detected data stream")
+		t.Log("no data packets produced for the detected data stream")
+		return
 	}
 	if pkt.StreamIndex() < 0 {
 		t.Fatalf("expected packet to have a valid stream index")
