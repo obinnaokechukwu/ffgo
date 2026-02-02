@@ -41,39 +41,39 @@ const (
 
 // Function bindings
 var (
-	avformatOpenInput       func(ctx *unsafe.Pointer, url string, fmt unsafe.Pointer, options *unsafe.Pointer) int32
+	avformatOpenInput       func(ctx *unsafe.Pointer, url string, fmt uintptr, options *unsafe.Pointer) int32
 	avformatCloseInput      func(ctx *unsafe.Pointer)
-	avformatFindStreamInfo  func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
+	avformatFindStreamInfo  func(ctx uintptr, options *unsafe.Pointer) int32
 	avformatAllocContext    func() uintptr
-	avformatFreeContext     func(ctx unsafe.Pointer)
-	avformatAllocOutputCtx2 func(ctx *unsafe.Pointer, oformat unsafe.Pointer, formatName, filename string) int32
-	avformatNewStream       func(ctx, codec unsafe.Pointer) uintptr
-	avformatWriteHeader     func(ctx unsafe.Pointer, options *unsafe.Pointer) int32
-	avWriteTrailer          func(ctx unsafe.Pointer) int32
+	avformatFreeContext     func(ctx uintptr)
+	avformatAllocOutputCtx2 func(ctx *unsafe.Pointer, oformat uintptr, formatName, filename string) int32
+	avformatNewStream       func(ctx, codec uintptr) uintptr
+	avformatWriteHeader     func(ctx uintptr, options *unsafe.Pointer) int32
+	avWriteTrailer          func(ctx uintptr) int32
 
-	avReadFrame             func(ctx, pkt unsafe.Pointer) int32
-	avWriteFrame            func(ctx, pkt unsafe.Pointer) int32
-	avInterleavedWriteFrame func(ctx, pkt unsafe.Pointer) int32
-	avSeekFrame             func(ctx unsafe.Pointer, streamIndex int32, timestamp int64, flags int32) int32
+	avReadFrame             func(ctx, pkt uintptr) int32
+	avWriteFrame            func(ctx, pkt uintptr) int32
+	avInterleavedWriteFrame func(ctx, pkt uintptr) int32
+	avSeekFrame             func(ctx uintptr, streamIndex int32, timestamp int64, flags int32) int32
 
-	avFindBestStream  func(ctx unsafe.Pointer, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
+	avFindBestStream  func(ctx uintptr, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
 	avFindInputFormat func(name string) uintptr
 	avDemuxerIterate  func(opaque *unsafe.Pointer) uintptr
 
 	avioOpen         func(ctx *unsafe.Pointer, url string, flags int32) int32
-	avioOpen2        func(ctx *unsafe.Pointer, url string, flags int32, intCb unsafe.Pointer, options *unsafe.Pointer) int32
-	avioClose        func(ctx unsafe.Pointer) int32
+	avioOpen2        func(ctx *unsafe.Pointer, url string, flags int32, intCb uintptr, options *unsafe.Pointer) int32
+	avioClose        func(ctx uintptr) int32
 	avioClosep       func(ctx *unsafe.Pointer) int32
-	avioAllocContext func(buffer unsafe.Pointer, bufferSize, writeFlag int32, opaque unsafe.Pointer, readPacket, writePacket, seek uintptr) uintptr
+	avioAllocContext func(buffer uintptr, bufferSize, writeFlag int32, opaque uintptr, readPacket, writePacket, seek uintptr) uintptr
 	avioContextFree  func(ctx *unsafe.Pointer)
 
 	// Packet functions (in avcodec but often used with avformat)
 	avPacketAlloc func() uintptr
 	avPacketFree  func(pkt *unsafe.Pointer)
-	avPacketUnref func(pkt unsafe.Pointer)
+	avPacketUnref func(pkt uintptr)
 
 	// Dictionary functions (from avutil, used for metadata)
-	avDictGet func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) uintptr
+	avDictGet func(m uintptr, key string, prev uintptr, flags int32) uintptr
 	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
 
 	// Note: Chapter creation uses the shim (internal/shim.NewChapter) because avformat_new_chapter
@@ -163,7 +163,7 @@ func FreeContext(ctx FormatContext) {
 	if ctx == nil || avformatFreeContext == nil {
 		return
 	}
-	avformatFreeContext(ctx)
+	avformatFreeContext(uintptr(ctx))
 }
 
 // FindInputFormat finds an input format by short name.
@@ -188,7 +188,7 @@ func OpenInput(ctx *FormatContext, url string, fmt InputFormat, options *avutil.
 	if options != nil {
 		optsPtr = options
 	}
-	ret := avformatOpenInput(ctx, url, fmt, optsPtr)
+	ret := avformatOpenInput(ctx, url, uintptr(fmt), optsPtr)
 	runtime.KeepAlive(url)
 	if ret < 0 {
 		return avutil.NewError(ret, "avformat_open_input")
@@ -210,7 +210,7 @@ func FindStreamInfo(ctx FormatContext, options *avutil.Dictionary) error {
 	if avformatFindStreamInfo == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avformatFindStreamInfo(ctx, options)
+	ret := avformatFindStreamInfo(uintptr(ctx), options)
 	if ret < 0 {
 		return avutil.NewError(ret, "avformat_find_stream_info")
 	}
@@ -222,7 +222,7 @@ func AllocOutputContext2(ctx *FormatContext, oformat OutputFormat, formatName, f
 	if avformatAllocOutputCtx2 == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avformatAllocOutputCtx2(ctx, oformat, formatName, filename)
+	ret := avformatAllocOutputCtx2(ctx, uintptr(oformat), formatName, filename)
 	runtime.KeepAlive(formatName)
 	runtime.KeepAlive(filename)
 	if ret < 0 {
@@ -236,7 +236,7 @@ func NewStream(ctx FormatContext, codec avcodec.Codec) Stream {
 	if avformatNewStream == nil {
 		return nil
 	}
-	return unsafe.Pointer(avformatNewStream(ctx, codec))
+	return unsafe.Pointer(avformatNewStream(uintptr(ctx), uintptr(codec)))
 }
 
 // WriteHeader writes the file header.
@@ -244,7 +244,7 @@ func WriteHeader(ctx FormatContext, options *avutil.Dictionary) error {
 	if avformatWriteHeader == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avformatWriteHeader(ctx, options)
+	ret := avformatWriteHeader(uintptr(ctx), options)
 	if ret < 0 {
 		return avutil.NewError(ret, "avformat_write_header")
 	}
@@ -256,7 +256,7 @@ func WriteTrailer(ctx FormatContext) error {
 	if avWriteTrailer == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avWriteTrailer(ctx)
+	ret := avWriteTrailer(uintptr(ctx))
 	if ret < 0 {
 		return avutil.NewError(ret, "av_write_trailer")
 	}
@@ -268,7 +268,7 @@ func ReadFrame(ctx FormatContext, pkt avcodec.Packet) error {
 	if avReadFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avReadFrame(ctx, pkt)
+	ret := avReadFrame(uintptr(ctx), uintptr(pkt))
 	if ret < 0 {
 		return avutil.NewError(ret, "av_read_frame")
 	}
@@ -280,7 +280,7 @@ func WriteFrame(ctx FormatContext, pkt avcodec.Packet) error {
 	if avWriteFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avWriteFrame(ctx, pkt)
+	ret := avWriteFrame(uintptr(ctx), uintptr(pkt))
 	if ret < 0 {
 		return avutil.NewError(ret, "av_write_frame")
 	}
@@ -292,7 +292,7 @@ func InterleavedWriteFrame(ctx FormatContext, pkt avcodec.Packet) error {
 	if avInterleavedWriteFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avInterleavedWriteFrame(ctx, pkt)
+	ret := avInterleavedWriteFrame(uintptr(ctx), uintptr(pkt))
 	runtime.KeepAlive(pkt)
 	if ret < 0 {
 		return avutil.NewError(ret, "av_interleaved_write_frame")
@@ -313,7 +313,7 @@ func SeekFrame(ctx FormatContext, streamIndex int32, timestamp int64, flags int3
 	if avSeekFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avSeekFrame(ctx, streamIndex, timestamp, flags)
+	ret := avSeekFrame(uintptr(ctx), streamIndex, timestamp, flags)
 	if ret < 0 {
 		return avutil.NewError(ret, "av_seek_frame")
 	}
@@ -326,7 +326,7 @@ func FindBestStream(ctx FormatContext, mediaType avutil.MediaType, wanted, relat
 	if avFindBestStream == nil {
 		return -1
 	}
-	return avFindBestStream(ctx, int32(mediaType), wanted, related, decoder, flags)
+	return avFindBestStream(uintptr(ctx), int32(mediaType), wanted, related, (*unsafe.Pointer)(unsafe.Pointer(decoder)), flags)
 }
 
 // IOOpen opens an I/O context.
@@ -352,7 +352,7 @@ func IOOpen2(ctx *IOContext, url string, flags int32, options *avutil.Dictionary
 	if options != nil {
 		optsPtr = options
 	}
-	ret := avioOpen2(ctx, url, flags, nil, optsPtr)
+	ret := avioOpen2(ctx, url, flags, 0, optsPtr)
 	runtime.KeepAlive(url)
 	if ret < 0 {
 		return avutil.NewError(ret, "avio_open2")
@@ -365,7 +365,7 @@ func IOClose(ctx IOContext) error {
 	if ctx == nil || avioClose == nil {
 		return nil
 	}
-	ret := avioClose(ctx)
+	ret := avioClose(uintptr(ctx))
 	if ret < 0 {
 		return avutil.NewError(ret, "avio_close")
 	}
@@ -414,7 +414,7 @@ func PacketUnref(pkt avcodec.Packet) {
 	if pkt == nil || avPacketUnref == nil {
 		return
 	}
-	avPacketUnref(pkt)
+	avPacketUnref(uintptr(pkt))
 }
 
 // AVFormatContext struct field offsets (for FFmpeg 6.x / avformat 60.x)
@@ -958,7 +958,7 @@ func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaqu
 	if writeFlag {
 		wf = 1
 	}
-	return unsafe.Pointer(avioAllocContext(buffer, int32(bufferSize), wf, opaque, readPacket, writePacket, seek))
+	return unsafe.Pointer(avioAllocContext(uintptr(buffer), int32(bufferSize), wf, uintptr(opaque), readPacket, writePacket, seek))
 }
 
 // IOContextFree frees an AVIOContext allocated with IOAllocContext.
@@ -1114,7 +1114,7 @@ func DictGet(dict avutil.Dictionary, key string, prev unsafe.Pointer, flags int3
 	if dict == nil || avDictGet == nil {
 		return nil
 	}
-	result := unsafe.Pointer(avDictGet(dict, key, prev, flags))
+	result := unsafe.Pointer(avDictGet(uintptr(dict), key, uintptr(prev), flags))
 	runtime.KeepAlive(key)
 	return result
 }

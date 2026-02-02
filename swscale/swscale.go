@@ -35,17 +35,17 @@ const (
 
 // Function bindings
 var (
-	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param unsafe.Pointer) uintptr
-	swsScale          func(ctx unsafe.Pointer, srcSlice, srcStride unsafe.Pointer, srcSliceY, srcSliceH int32, dst, dstStride unsafe.Pointer) int32
-	swsFreeContext    func(ctx unsafe.Pointer)
-	swsScaleFrame     func(ctx, dst, src unsafe.Pointer) int32
-	swsFrameStart     func(ctx, dst, src unsafe.Pointer) int32
-	swsFrameEnd       func(ctx unsafe.Pointer)
+	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param uintptr) uintptr
+	swsScale          func(ctx, srcSlice, srcStride uintptr, srcSliceY, srcSliceH int32, dst, dstStride uintptr) int32
+	swsFreeContext    func(ctx uintptr)
+	swsScaleFrame     func(ctx, dst, src uintptr) int32
+	swsFrameStart     func(ctx, dst, src uintptr) int32
+	swsFrameEnd       func(ctx uintptr)
 	swsIsSupportedIn  func(format int32) int32
 	swsIsSupportedOut func(format int32) int32
 
-	swsGetColorspaceDetails func(ctx unsafe.Pointer, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
-	swsSetColorspaceDetails func(ctx unsafe.Pointer, invTable unsafe.Pointer, srcRange int32, table unsafe.Pointer, dstRange int32, brightness, contrast, saturation int32) int32
+	swsGetColorspaceDetails func(ctx uintptr, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
+	swsSetColorspaceDetails func(ctx, invTable uintptr, srcRange int32, table uintptr, dstRange int32, brightness, contrast, saturation int32) int32
 	swsGetCoefficients      func(colorspace int32) uintptr
 
 	bindingsRegistered bool
@@ -111,7 +111,7 @@ func GetContext(srcW, srcH int, srcFormat avutil.PixelFormat, dstW, dstH int, ds
 		int32(srcW), int32(srcH), int32(srcFormat),
 		int32(dstW), int32(dstH), int32(dstFormat),
 		flags,
-		srcFilter, dstFilter, param,
+		uintptr(srcFilter), uintptr(dstFilter), uintptr(param),
 	))
 }
 
@@ -121,7 +121,7 @@ func FreeContext(ctx Context) {
 	if ctx == nil || swsFreeContext == nil {
 		return
 	}
-	swsFreeContext(ctx)
+	swsFreeContext(uintptr(ctx))
 }
 
 // Scale performs the scaling operation on raw data pointers.
@@ -137,10 +137,10 @@ func Scale(ctx Context, srcSlice *[8]unsafe.Pointer, srcStride *[8]int32, srcSli
 	if ctx == nil || swsScale == nil {
 		return -1
 	}
-	return swsScale(ctx,
-		unsafe.Pointer(srcSlice), unsafe.Pointer(srcStride),
+	return swsScale(uintptr(ctx),
+		uintptr(unsafe.Pointer(srcSlice)), uintptr(unsafe.Pointer(srcStride)),
 		srcSliceY, srcSliceH,
-		unsafe.Pointer(dst), unsafe.Pointer(dstStride),
+		uintptr(unsafe.Pointer(dst)), uintptr(unsafe.Pointer(dstStride)),
 	)
 }
 
@@ -155,7 +155,7 @@ func ScaleFrame(ctx Context, dst, src avutil.Frame) int32 {
 
 	// sws_scale_frame may not be available in older FFmpeg
 	if swsScaleFrame != nil {
-		return swsScaleFrame(ctx, dst, src)
+		return swsScaleFrame(uintptr(ctx), uintptr(dst), uintptr(src))
 	}
 
 	// Fallback to sws_scale
@@ -170,10 +170,10 @@ func ScaleFrame(ctx Context, dst, src avutil.Frame) int32 {
 	dstLinesize := avutil.GetFrameLinesize(dst)
 	srcH := avutil.GetFrameHeight(src)
 
-	return swsScale(ctx,
-		unsafe.Pointer(&srcData), unsafe.Pointer(&srcLinesize),
+	return swsScale(uintptr(ctx),
+		uintptr(unsafe.Pointer(&srcData)), uintptr(unsafe.Pointer(&srcLinesize)),
 		0, srcH,
-		unsafe.Pointer(&dstData), unsafe.Pointer(&dstLinesize),
+		uintptr(unsafe.Pointer(&dstData)), uintptr(unsafe.Pointer(&dstLinesize)),
 	)
 }
 
@@ -203,7 +203,7 @@ func GetColorspaceDetails(ctx Context, invTable *unsafe.Pointer, srcRange *int32
 	if ctx == nil || swsGetColorspaceDetails == nil {
 		return -1
 	}
-	return swsGetColorspaceDetails(ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
+	return swsGetColorspaceDetails(uintptr(ctx), invTable, srcRange, table, dstRange, brightness, contrast, saturation)
 }
 
 // SetColorspaceDetails wraps sws_setColorspaceDetails.
@@ -211,7 +211,7 @@ func SetColorspaceDetails(ctx Context, invTable unsafe.Pointer, srcRange int32, 
 	if ctx == nil || swsSetColorspaceDetails == nil {
 		return -1
 	}
-	return swsSetColorspaceDetails(ctx, invTable, srcRange, table, dstRange, brightness, contrast, saturation)
+	return swsSetColorspaceDetails(uintptr(ctx), uintptr(invTable), srcRange, uintptr(table), dstRange, brightness, contrast, saturation)
 }
 
 // GetCoefficients wraps sws_getCoefficients and returns the coefficient table pointer.

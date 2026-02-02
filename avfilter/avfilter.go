@@ -35,20 +35,20 @@ var (
 		// Graph management
 		avfilter_graph_alloc         func() uintptr
 		avfilter_graph_free          func(graph *Graph)
-		avfilter_graph_config        func(graphctx, log_ctx Graph) int32
-		avfilter_graph_parse2        func(graph Graph, filters *byte, inputs, outputs *InOut) int32
-		avfilter_graph_create_filter func(filt_ctx *Context, filt Filter, name, args *byte, opaque, graph_ctx unsafe.Pointer) int32
+		avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
+		avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
+		avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
 
 		// Filter lookup
 		avfilter_get_by_name func(name *byte) uintptr
 
-	// Filter linking
-	avfilter_link func(src Context, srcpad uint32, dst Context, dstpad uint32) int32
+		// Filter linking
+		avfilter_link func(src uintptr, srcpad uint32, dst uintptr, dstpad uint32) int32
 
-	// Buffer source/sink
-	av_buffersrc_add_frame_flags  func(ctx Context, frame unsafe.Pointer, flags int32) int32
-	av_buffersink_get_frame_flags func(ctx Context, frame unsafe.Pointer, flags int32) int32
-	av_buffersink_get_frame       func(ctx Context, frame unsafe.Pointer) int32
+		// Buffer source/sink
+		av_buffersrc_add_frame_flags  func(ctx, frame uintptr, flags int32) int32
+		av_buffersink_get_frame_flags func(ctx, frame uintptr, flags int32) int32
+		av_buffersink_get_frame       func(ctx, frame uintptr) int32
 
 		// InOut management
 		avfilter_inout_alloc func() uintptr
@@ -157,7 +157,7 @@ func GraphConfig(graph Graph) error {
 	if err := Init(); err != nil {
 		return err
 	}
-	ret := avfilter_graph_config(graph, nil)
+	ret := avfilter_graph_config(uintptr(graph), 0)
 	if ret < 0 {
 		return fmt.Errorf("avfilter_graph_config failed: %d", ret)
 	}
@@ -183,7 +183,7 @@ func GraphParse2(graph Graph, filters string) (inputs, outputs InOut, err error)
 		return nil, nil, err
 	}
 
-	ret := avfilter_graph_parse2(graph, cString(filters), &inputs, &outputs)
+	ret := avfilter_graph_parse2(uintptr(graph), cString(filters), &inputs, &outputs)
 	if ret < 0 {
 		return nil, nil, fmt.Errorf("avfilter_graph_parse2 failed: %d", ret)
 	}
@@ -203,7 +203,14 @@ func GraphCreateFilter(graph Graph, filter Filter, name, args string) (Context, 
 	}
 
 	var ctx Context
-	ret := avfilter_graph_create_filter(&ctx, filter, cString(name), cString(args), nil, graph)
+	ret := avfilter_graph_create_filter(
+		&ctx,
+		uintptr(filter),
+		uintptr(unsafe.Pointer(cString(name))),
+		uintptr(unsafe.Pointer(cString(args))),
+		0,
+		uintptr(graph),
+	)
 	if ret < 0 {
 		return nil, fmt.Errorf("avfilter_graph_create_filter failed: %d", ret)
 	}
@@ -226,7 +233,7 @@ func Link(src Context, srcPad uint32, dst Context, dstPad uint32) error {
 	if err := Init(); err != nil {
 		return err
 	}
-	ret := avfilter_link(src, srcPad, dst, dstPad)
+	ret := avfilter_link(uintptr(src), srcPad, uintptr(dst), dstPad)
 	if ret < 0 {
 		return fmt.Errorf("avfilter_link failed: %d", ret)
 	}
@@ -241,7 +248,7 @@ func BufferSrcAddFrameFlags(ctx Context, frame unsafe.Pointer, flags int32) erro
 	if err := Init(); err != nil {
 		return err
 	}
-	ret := av_buffersrc_add_frame_flags(ctx, frame, flags)
+	ret := av_buffersrc_add_frame_flags(uintptr(ctx), uintptr(frame), flags)
 	if ret < 0 {
 		return fmt.Errorf("av_buffersrc_add_frame_flags failed: %d", ret)
 	}
@@ -257,7 +264,7 @@ func BufferSinkGetFrameFlags(ctx Context, frame unsafe.Pointer, flags int32) int
 	if err := Init(); err != nil {
 		return -22
 	}
-	return av_buffersink_get_frame_flags(ctx, frame, flags)
+	return av_buffersink_get_frame_flags(uintptr(ctx), uintptr(frame), flags)
 }
 
 // BufferSinkGetFrame retrieves a frame from a buffersink filter (convenience wrapper).
@@ -268,7 +275,7 @@ func BufferSinkGetFrame(ctx Context, frame unsafe.Pointer) int32 {
 	if err := Init(); err != nil {
 		return -22
 	}
-	return av_buffersink_get_frame(ctx, frame)
+	return av_buffersink_get_frame(uintptr(ctx), uintptr(frame))
 }
 
 // InOutAlloc allocates an AVFilterInOut structure.

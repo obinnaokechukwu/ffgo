@@ -99,7 +99,7 @@ func SetLogCallback(cb LogCallback) error {
 
 // logCallbackTrampoline is called by the shim and forwards to the Go callback.
 // Signature: void (*)(void *avcl, int level, const char *msg)
-func logCallbackTrampoline(_ purego.CDecl, _ unsafe.Pointer, level int32, msg *byte) {
+func logCallbackTrampoline(_ purego.CDecl, _ uintptr, level int32, msg *byte) {
 	logCallbackMu.Lock()
 	cb := logCallback
 	logCallbackMu.Unlock()

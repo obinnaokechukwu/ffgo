@@ -28,11 +28,11 @@ type bsfContext = unsafe.Pointer
 // BSF function bindings
 var (
 	avBsfGetByName     func(name string) uintptr
-	avBsfAllocContext  func(filter unsafe.Pointer, ctx *unsafe.Pointer) int32
-	avBsfInit          func(ctx unsafe.Pointer) int32
+	avBsfAllocContext  func(filter uintptr, ctx *unsafe.Pointer) int32
+	avBsfInit          func(ctx uintptr) int32
 	avBsfFree          func(ctx *unsafe.Pointer)
-	avBsfSendPacket    func(ctx, pkt unsafe.Pointer) int32
-	avBsfReceivePacket func(ctx, pkt unsafe.Pointer) int32
+	avBsfSendPacket    func(ctx, pkt uintptr) int32
+	avBsfReceivePacket func(ctx, pkt uintptr) int32
 
 	bsfBindingsRegistered bool
 )
@@ -112,7 +112,7 @@ func NewBitstreamFilter(filterName string) (*BitstreamFilter, error) {
 
 	// Allocate context
 	var ctx bsfContext
-	ret := avBsfAllocContext(filter, &ctx)
+	ret := avBsfAllocContext(uintptr(filter), &ctx)
 	if ret < 0 {
 		return nil, avutil.NewError(ret, "av_bsf_alloc")
 	}
@@ -176,7 +176,7 @@ func (f *BitstreamFilter) Init() error {
 		return bindings.ErrNotLoaded
 	}
 
-	ret := avBsfInit(f.ctx)
+	ret := avBsfInit(uintptr(f.ctx))
 	if ret < 0 {
 		return avutil.NewError(ret, "av_bsf_init")
 	}
@@ -195,7 +195,7 @@ func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 	}
 
 	// Send packet
-	ret := avBsfSendPacket(f.ctx, pkt)
+	ret := avBsfSendPacket(uintptr(f.ctx), uintptr(pkt))
 	if ret < 0 {
 		if isEAGAIN(ret) {
 			return nil, nil
@@ -204,7 +204,7 @@ func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 	}
 
 	// Receive filtered packet
-	ret = avBsfReceivePacket(f.ctx, f.packet)
+	ret = avBsfReceivePacket(uintptr(f.ctx), uintptr(f.packet))
 	if ret < 0 {
 		if isEAGAIN(ret) || isEOF(ret) {
 			return nil, nil
@@ -226,13 +226,13 @@ func (f *BitstreamFilter) Flush() (avcodec.Packet, error) {
 	}
 
 	// Send NULL packet to flush
-	ret := avBsfSendPacket(f.ctx, nil)
+	ret := avBsfSendPacket(uintptr(f.ctx), 0)
 	if ret < 0 && !isEAGAIN(ret) {
 		return nil, avutil.NewError(ret, "av_bsf_send_packet")
 	}
 
 	// Receive flushed packet
-	ret = avBsfReceivePacket(f.ctx, f.packet)
+	ret = avBsfReceivePacket(uintptr(f.ctx), uintptr(f.packet))
 	if ret < 0 {
 		if isEAGAIN(ret) || isEOF(ret) {
 			return nil, nil

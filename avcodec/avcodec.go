@@ -31,27 +31,27 @@ var (
 	avcodecFindEncoder       func(id int32) uintptr
 	avcodecFindDecoderByName func(name string) uintptr
 	avcodecFindEncoderByName func(name string) uintptr
-	avcodecAllocContext3     func(codec unsafe.Pointer) uintptr
+	avcodecAllocContext3     func(codec uintptr) uintptr
 	avcodecFreeContext       func(ctx *unsafe.Pointer)
-	avcodecOpen2             func(ctx, codec unsafe.Pointer, options *unsafe.Pointer) int32
-	avcodecClose             func(ctx unsafe.Pointer) int32
-	avcodecSendPacket        func(ctx, pkt unsafe.Pointer) int32
-	avcodecReceiveFrame      func(ctx, frame unsafe.Pointer) int32
-	avcodecSendFrame         func(ctx, frame unsafe.Pointer) int32
-	avcodecReceivePacket     func(ctx, pkt unsafe.Pointer) int32
-	avcodecFlushBuffers      func(ctx unsafe.Pointer)
-	avcodecParametersToCtx   func(ctx, par unsafe.Pointer) int32
-	avcodecParametersFromCtx func(par, ctx unsafe.Pointer) int32
-	avcodecParametersCopy    func(dst, src unsafe.Pointer) int32
+	avcodecOpen2             func(ctx, codec uintptr, options *unsafe.Pointer) int32
+	avcodecClose             func(ctx uintptr) int32
+	avcodecSendPacket        func(ctx, pkt uintptr) int32
+	avcodecReceiveFrame      func(ctx, frame uintptr) int32
+	avcodecSendFrame         func(ctx, frame uintptr) int32
+	avcodecReceivePacket     func(ctx, pkt uintptr) int32
+	avcodecFlushBuffers      func(ctx uintptr)
+	avcodecParametersToCtx   func(ctx, par uintptr) int32
+	avcodecParametersFromCtx func(par, ctx uintptr) int32
+	avcodecParametersCopy    func(dst, src uintptr) int32
 
 	avPacketAlloc func() uintptr
 	avPacketFree  func(pkt *unsafe.Pointer)
-	avPacketRef   func(dst, src unsafe.Pointer) int32
-	avPacketUnref func(pkt unsafe.Pointer)
+	avPacketRef   func(dst, src uintptr) int32
+	avPacketUnref func(pkt uintptr)
 
 	// Subtitle decoding
-	avcodecDecodeSubtitle2 func(ctx, sub, gotSubPtr, pkt unsafe.Pointer) int32
-	avsubtitleFree         func(sub unsafe.Pointer)
+	avcodecDecodeSubtitle2 func(ctx, sub, gotSubPtr, pkt uintptr) int32
+	avsubtitleFree         func(sub uintptr)
 
 	bindingsRegistered bool
 )
@@ -144,7 +144,7 @@ func AllocContext3(codec Codec) Context {
 	if avcodecAllocContext3 == nil {
 		return nil
 	}
-	return unsafe.Pointer(avcodecAllocContext3(codec))
+	return unsafe.Pointer(avcodecAllocContext3(uintptr(codec)))
 }
 
 // FreeContext frees a codec context.
@@ -161,7 +161,7 @@ func Open2(ctx Context, codec Codec, options *avutil.Dictionary) error {
 	if avcodecOpen2 == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecOpen2(ctx, codec, options)
+	ret := avcodecOpen2(uintptr(ctx), uintptr(codec), options)
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_open2")
 	}
@@ -173,7 +173,7 @@ func Close(ctx Context) error {
 	if ctx == nil || avcodecClose == nil {
 		return nil
 	}
-	ret := avcodecClose(ctx)
+	ret := avcodecClose(uintptr(ctx))
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_close")
 	}
@@ -186,7 +186,7 @@ func SendPacket(ctx Context, pkt Packet) error {
 	if avcodecSendPacket == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecSendPacket(ctx, pkt)
+	ret := avcodecSendPacket(uintptr(ctx), uintptr(pkt))
 	runtime.KeepAlive(pkt)
 	if ret < 0 && ret != avutil.AVERROR_EAGAIN && ret != avutil.AVERROR_EOF {
 		return avutil.NewError(ret, "avcodec_send_packet")
@@ -200,7 +200,7 @@ func ReceiveFrame(ctx Context, frame avutil.Frame) error {
 	if avcodecReceiveFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecReceiveFrame(ctx, frame)
+	ret := avcodecReceiveFrame(uintptr(ctx), uintptr(frame))
 	if ret == avutil.AVERROR_EAGAIN || ret == avutil.AVERROR_EOF {
 		return avutil.NewError(ret, "avcodec_receive_frame")
 	}
@@ -216,7 +216,7 @@ func SendFrame(ctx Context, frame avutil.Frame) error {
 	if avcodecSendFrame == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecSendFrame(ctx, frame)
+	ret := avcodecSendFrame(uintptr(ctx), uintptr(frame))
 	runtime.KeepAlive(frame)
 	if ret < 0 && ret != avutil.AVERROR_EAGAIN && ret != avutil.AVERROR_EOF {
 		return avutil.NewError(ret, "avcodec_send_frame")
@@ -229,7 +229,7 @@ func ReceivePacket(ctx Context, pkt Packet) error {
 	if avcodecReceivePacket == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecReceivePacket(ctx, pkt)
+	ret := avcodecReceivePacket(uintptr(ctx), uintptr(pkt))
 	if ret == avutil.AVERROR_EAGAIN || ret == avutil.AVERROR_EOF {
 		return avutil.NewError(ret, "avcodec_receive_packet")
 	}
@@ -244,7 +244,7 @@ func FlushBuffers(ctx Context) {
 	if ctx == nil || avcodecFlushBuffers == nil {
 		return
 	}
-	avcodecFlushBuffers(ctx)
+	avcodecFlushBuffers(uintptr(ctx))
 }
 
 // ParametersToContext copies codec parameters to a context.
@@ -252,7 +252,7 @@ func ParametersToContext(ctx Context, par Parameters) error {
 	if avcodecParametersToCtx == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecParametersToCtx(ctx, par)
+	ret := avcodecParametersToCtx(uintptr(ctx), uintptr(par))
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_parameters_to_context")
 	}
@@ -264,7 +264,7 @@ func ParametersFromContext(par Parameters, ctx Context) error {
 	if avcodecParametersFromCtx == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecParametersFromCtx(par, ctx)
+	ret := avcodecParametersFromCtx(uintptr(par), uintptr(ctx))
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_parameters_from_context")
 	}
@@ -276,7 +276,7 @@ func ParametersCopy(dst, src Parameters) error {
 	if avcodecParametersCopy == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecParametersCopy(dst, src)
+	ret := avcodecParametersCopy(uintptr(dst), uintptr(src))
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_parameters_copy")
 	}
@@ -327,7 +327,7 @@ func PacketRef(dst, src Packet) error {
 	if avPacketRef == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avPacketRef(dst, src)
+	ret := avPacketRef(uintptr(dst), uintptr(src))
 	if ret < 0 {
 		return avutil.NewError(ret, "av_packet_ref")
 	}
@@ -339,7 +339,7 @@ func PacketUnref(pkt Packet) {
 	if pkt == nil || avPacketUnref == nil {
 		return
 	}
-	avPacketUnref(pkt)
+	avPacketUnref(uintptr(pkt))
 }
 
 // AVCodec struct field offset for name (const char *name at offset 0)
@@ -846,7 +846,7 @@ func DecodeSubtitle2(ctx Context, sub, pkt unsafe.Pointer) (bool, error) {
 		return false, bindings.ErrNotLoaded
 	}
 	var gotSub int32
-	ret := avcodecDecodeSubtitle2(ctx, sub, unsafe.Pointer(&gotSub), pkt)
+	ret := avcodecDecodeSubtitle2(uintptr(ctx), uintptr(sub), uintptr(unsafe.Pointer(&gotSub)), uintptr(pkt))
 	if ret < 0 {
 		return false, avutil.NewError(ret, "avcodec_decode_subtitle2")
 	}
@@ -858,7 +858,7 @@ func SubtitleFree(sub unsafe.Pointer) {
 	if avsubtitleFree == nil || sub == nil {
 		return
 	}
-	avsubtitleFree(sub)
+	avsubtitleFree(uintptr(sub))
 }
 
 // GetCtxHWFramesCtx returns the hardware frames context from codec context.
