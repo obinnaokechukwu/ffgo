@@ -27,24 +27,10 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
-  # Test with FFmpeg on multiple platforms
-  test-with-ffmpeg:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            name: Linux amd64
-          - os: macos-15-intel
-            name: macOS Intel
-          - os: macos-15
-            name: macOS ARM64
-          # Windows tests are more complex due to FFmpeg setup
-          # - os: windows-latest
-          #   name: Windows amd64
-
-    runs-on: ${{ matrix.os }}
-    name: Test (${{ matrix.name }})
+  # Test with FFmpeg (Linux amd64)
+  test-with-ffmpeg-linux:
+    runs-on: ubuntu-latest
+    name: Test (Linux amd64)
     steps:
       - uses: actions/checkout@v4
 
@@ -53,27 +39,85 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install FFmpeg (Linux)
-        if: runner.os == 'Linux'
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev \
             libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev
 
-      - name: Install FFmpeg (macOS)
-        if: runner.os == 'macOS'
+      - name: Build shim
+        working-directory: shim
+        run: ./build.sh
+
+      - name: Set library path
+        run: echo "LD_LIBRARY_PATH=${{ github.workspace }}/shim:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: go test -v ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+      - name: Run integration tests
+        run: go test -v -run Integration ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+  # Test with FFmpeg (macOS Intel)
+  test-with-ffmpeg-macos-intel:
+    runs-on: macos-15-intel
+    name: Test (macOS Intel)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install FFmpeg
         run: brew install ffmpeg
 
       - name: Build shim
         working-directory: shim
         run: ./build.sh
 
-      - name: Set library path (Linux)
-        if: runner.os == 'Linux'
-        run: echo "LD_LIBRARY_PATH=${{ github.workspace }}/shim:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+      - name: Set library path
+        run: echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/shim:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
-      - name: Set library path (macOS)
-        if: runner.os == 'macOS'
+      - name: Run tests
+        run: go test -v ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+      - name: Run integration tests
+        run: go test -v -run Integration ./...
+        env:
+          CGO_ENABLED: "0"
+          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
+
+  # Test with FFmpeg (macOS ARM64)
+  test-with-ffmpeg-macos-arm64:
+    runs-on: macos-15
+    name: Test (macOS ARM64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
+      - name: Build shim
+        working-directory: shim
+        run: ./build.sh
+
+      - name: Set library path
         run: echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/shim:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Run tests
