@@ -23,6 +23,9 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   build-linux-amd64:
     runs-on: ubuntu-latest
@@ -222,12 +225,18 @@ jobs:
           sha256sum ffshim-prebuilt.tar.gz > ffshim-prebuilt.tar.gz.sha256
 
       - name: Upload release asset
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            ffshim-prebuilt.tar.gz
-            ffshim-prebuilt.tar.gz.sha256
+        # Avoid "skipped" steps: always run and no-op on non-release events.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" != "release" ]; then
+            echo "Not a release event (${GITHUB_EVENT_NAME}); skipping release upload."
+            exit 0
+          fi
+
+          tag="${GITHUB_REF_NAME}"
+          echo "Uploading prebuilt shims to release ${tag}..."
+          gh release upload "${tag}" ffshim-prebuilt.tar.gz ffshim-prebuilt.tar.gz.sha256 --clobber
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4

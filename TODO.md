@@ -56,10 +56,12 @@ and updated Go accessors to prefer shim helpers on platforms where struct offset
 
 ## Completed
 
-- [x] Replace LICENSE throughout history with Apache 2.0
-- [x] Replace README.md throughout history with current content
-- [x] Remove `.claude/` from public repo
-- [x] Remove `.envrc` from public repo
+- [x] Replace LICENSE throughout *reachable* public history with Apache 2.0
+- [x] Replace README.md throughout *reachable* public history with current content
+- [x] Ensure `.claude/` never syncs to the public repo (and is absent from reachable public history)
+- [x] Ensure `.envrc` never syncs to the public repo (and is absent from reachable public history)
 - [x] Add cross-platform shim build system
 - [x] Add GitHub Actions CI workflows
 - [x] Ship prebuilt shims for supported platforms
+
+> Note: some Git hosts may temporarily retain unreachable/orphaned objects. `git-copy audit` verifies reachable history; permanently deleting unreachable objects on GitHub generally requires deleting/recreating the public repo.
