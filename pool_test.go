@@ -10,6 +10,10 @@ import (
 )
 
 func TestFramePool_GetPutAndLimit(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	p := NewFramePool(1)
 	defer p.Close()
 
@@ -32,6 +36,10 @@ func TestFramePool_GetPutAndLimit(t *testing.T) {
 }
 
 func TestFrameWrapBuffer_RGB24(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	SetWrappedBufferMemoryLimit(0)
 
 	before := WrappedBufferMemoryUsage()
@@ -77,6 +85,10 @@ func TestFrameWrapBuffer_RGB24(t *testing.T) {
 }
 
 func TestFrameWrapBuffer_MemoryLimit(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	defer SetWrappedBufferMemoryLimit(0)
 
 	SetWrappedBufferMemoryLimit(16)

@@ -24,6 +24,10 @@ func TestGenerateTimestamps(t *testing.T) {
 }
 
 func TestValidateTimestamps(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	f1 := FrameAlloc()
 	f2 := FrameAlloc()
 	f3 := FrameAlloc()
@@ -46,6 +50,14 @@ func TestValidateTimestamps(t *testing.T) {
 }
 
 func TestFrameRateDetect(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping FrameRateDetect in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 	dec, err := NewDecoder(in)
 	if err != nil {
