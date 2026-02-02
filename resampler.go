@@ -78,12 +78,8 @@ func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 		outLayout := avutil.Malloc(avChannelLayoutBufSize)
 		inLayout := avutil.Malloc(avChannelLayoutBufSize)
 		if outLayout != nil && inLayout != nil {
-			if err := avutil.ChannelLayoutFromMask(outLayout, uint64(dst.ChannelLayout)); err != nil {
-				avutil.ChannelLayoutDefault(outLayout, int32(dst.Channels))
-			}
-			if err := avutil.ChannelLayoutFromMask(inLayout, uint64(src.ChannelLayout)); err != nil {
-				avutil.ChannelLayoutDefault(inLayout, int32(src.Channels))
-			}
+			avutil.ChannelLayoutDefault(outLayout, int32(dst.Channels))
+			avutil.ChannelLayoutDefault(inLayout, int32(src.Channels))
 
 			if err := swresample.AllocSetOpts2(&ctx, outLayout, inLayout,
 				int32(dst.SampleFormat), int32(src.SampleFormat),
