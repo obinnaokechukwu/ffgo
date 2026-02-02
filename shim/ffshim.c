@@ -222,7 +222,7 @@ int ffshim_avdevice_list_input_sources(
         g_avdevice_registered = 1;
     }
 
-    AVInputFormat *fmt = av_find_input_format(format_name);
+    const AVInputFormat *fmt = av_find_input_format(format_name);
     if (fmt == NULL) {
         return AVERROR(EINVAL);
     }
@@ -412,6 +412,20 @@ void ffshim_codecctx_set_pix_fmt(void *ctx, int pix_fmt) {
         return;
     }
     ((AVCodecContext*)ctx)->pix_fmt = pix_fmt;
+}
+
+int ffshim_codecctx_sample_fmt(void *ctx) {
+    if (ctx == NULL) {
+        return -1;
+    }
+    return ((AVCodecContext*)ctx)->sample_fmt;
+}
+
+void ffshim_codecctx_set_sample_fmt(void *ctx, int sample_fmt) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->sample_fmt = sample_fmt;
 }
 
 void ffshim_codecctx_time_base(void *ctx, int *out_num, int *out_den) {

@@ -133,6 +133,8 @@ int ffshim_codecctx_height(void *ctx);
 void ffshim_codecctx_set_height(void *ctx, int height);
 int ffshim_codecctx_pix_fmt(void *ctx);
 void ffshim_codecctx_set_pix_fmt(void *ctx, int pix_fmt);
+int ffshim_codecctx_sample_fmt(void *ctx);
+void ffshim_codecctx_set_sample_fmt(void *ctx, int sample_fmt);
 void ffshim_codecctx_time_base(void *ctx, int *out_num, int *out_den);
 void ffshim_codecctx_set_time_base(void *ctx, int num, int den);
 void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den);
