@@ -470,3 +470,127 @@ void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels) {
     (void)nb_channels;
 #endif
 }
+
+/* ============================================================================
+ * FORMAT FIELD HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+int64_t ffshim_formatctx_duration(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVFormatContext*)ctx)->duration;
+}
+
+int64_t ffshim_formatctx_bit_rate(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVFormatContext*)ctx)->bit_rate;
+}
+
+unsigned int ffshim_formatctx_nb_chapters(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVFormatContext*)ctx)->nb_chapters;
+}
+
+void* ffshim_formatctx_chapter(void *ctx, int index) {
+    if (ctx == NULL || index < 0) {
+        return NULL;
+    }
+    AVFormatContext *fc = (AVFormatContext*)ctx;
+    if (fc->chapters == NULL) {
+        return NULL;
+    }
+    if ((unsigned int)index >= fc->nb_chapters) {
+        return NULL;
+    }
+    return (void*)fc->chapters[index];
+}
+
+unsigned int ffshim_formatctx_nb_programs(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVFormatContext*)ctx)->nb_programs;
+}
+
+void* ffshim_formatctx_program(void *ctx, int index) {
+    if (ctx == NULL || index < 0) {
+        return NULL;
+    }
+    AVFormatContext *fc = (AVFormatContext*)ctx;
+    if (fc->programs == NULL) {
+        return NULL;
+    }
+    if ((unsigned int)index >= fc->nb_programs) {
+        return NULL;
+    }
+    return (void*)fc->programs[index];
+}
+
+int64_t ffshim_chapter_id(void *ch) {
+    if (ch == NULL) {
+        return 0;
+    }
+    return ((AVChapter*)ch)->id;
+}
+
+void ffshim_chapter_time_base(void *ch, int *out_num, int *out_den) {
+    if (ch == NULL || out_num == NULL || out_den == NULL) {
+        return;
+    }
+    *out_num = ((AVChapter*)ch)->time_base.num;
+    *out_den = ((AVChapter*)ch)->time_base.den;
+}
+
+int64_t ffshim_chapter_start(void *ch) {
+    if (ch == NULL) {
+        return 0;
+    }
+    return ((AVChapter*)ch)->start;
+}
+
+int64_t ffshim_chapter_end(void *ch) {
+    if (ch == NULL) {
+        return 0;
+    }
+    return ((AVChapter*)ch)->end;
+}
+
+void* ffshim_chapter_metadata(void *ch) {
+    if (ch == NULL) {
+        return NULL;
+    }
+    return (void*)((AVChapter*)ch)->metadata;
+}
+
+int ffshim_program_id(void *p) {
+    if (p == NULL) {
+        return 0;
+    }
+    return ((AVProgram*)p)->id;
+}
+
+unsigned int ffshim_program_nb_stream_indexes(void *p) {
+    if (p == NULL) {
+        return 0;
+    }
+    return ((AVProgram*)p)->nb_stream_indexes;
+}
+
+unsigned int* ffshim_program_stream_index(void *p) {
+    if (p == NULL) {
+        return NULL;
+    }
+    return ((AVProgram*)p)->stream_index;
+}
+
+void* ffshim_program_metadata(void *p) {
+    if (p == NULL) {
+        return NULL;
+    }
+    return (void*)((AVProgram*)p)->metadata;
+}

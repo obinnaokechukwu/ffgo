@@ -184,7 +184,26 @@ func Open2(ctx Context, codec Codec, options *avutil.Dictionary) error {
 	if avcodecOpen2 == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avcodecOpen2(uintptr(ctx), uintptr(codec), options)
+
+	// Avoid passing a pointer-to-pointer that points into Go memory to foreign code
+	// (purego/libffi can abort on macOS). Stage the pointer in FFmpeg-allocated memory.
+	var tmp unsafe.Pointer
+	if options != nil {
+		tmp = avutil.Malloc(unsafe.Sizeof(uintptr(0)))
+		if tmp != nil {
+			*(*unsafe.Pointer)(tmp) = *options
+		}
+	}
+
+	var ret int32
+	if options != nil && tmp != nil {
+		ret = avcodecOpen2(uintptr(ctx), uintptr(codec), (*unsafe.Pointer)(tmp))
+		*options = *(*unsafe.Pointer)(tmp)
+		avutil.Free(tmp)
+	} else {
+		ret = avcodecOpen2(uintptr(ctx), uintptr(codec), options)
+	}
+
 	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_open2")
 	}

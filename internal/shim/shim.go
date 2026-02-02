@@ -85,6 +85,25 @@ var (
 	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
 	shimCodecCtxSetFramerate func(ctx uintptr, num, den int32)
 	shimCodecCtxSetChLayout  func(ctx uintptr, nbChannels int32)
+
+	// AVFormatContext / chapter / program helpers (optional)
+	shimFormatCtxDuration    func(ctx uintptr) int64
+	shimFormatCtxBitRate     func(ctx uintptr) int64
+	shimFormatCtxNbChapters  func(ctx uintptr) uint32
+	shimFormatCtxChapter     func(ctx uintptr, index int32) uintptr
+	shimFormatCtxNbPrograms  func(ctx uintptr) uint32
+	shimFormatCtxProgram     func(ctx uintptr, index int32) uintptr
+
+	shimChapterID       func(ch uintptr) int64
+	shimChapterTimeBase func(ch uintptr, outNum, outDen *int32)
+	shimChapterStart    func(ch uintptr) int64
+	shimChapterEnd      func(ch uintptr) int64
+	shimChapterMetadata func(ch uintptr) uintptr
+
+	shimProgramID             func(p uintptr) int32
+	shimProgramNbStreamIdx    func(p uintptr) uint32
+	shimProgramStreamIndexPtr func(p uintptr) uintptr
+	shimProgramMetadata       func(p uintptr) uintptr
 )
 
 // Load attempts to load the ffshim library.
@@ -275,6 +294,25 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
 	registerOptionalLibFunc(&shimCodecCtxSetFramerate, libShim, "ffshim_codecctx_set_framerate")
 	registerOptionalLibFunc(&shimCodecCtxSetChLayout, libShim, "ffshim_codecctx_set_ch_layout_default")
+
+	// AVFormatContext / chapter / program helpers (optional)
+	registerOptionalLibFunc(&shimFormatCtxDuration, libShim, "ffshim_formatctx_duration")
+	registerOptionalLibFunc(&shimFormatCtxBitRate, libShim, "ffshim_formatctx_bit_rate")
+	registerOptionalLibFunc(&shimFormatCtxNbChapters, libShim, "ffshim_formatctx_nb_chapters")
+	registerOptionalLibFunc(&shimFormatCtxChapter, libShim, "ffshim_formatctx_chapter")
+	registerOptionalLibFunc(&shimFormatCtxNbPrograms, libShim, "ffshim_formatctx_nb_programs")
+	registerOptionalLibFunc(&shimFormatCtxProgram, libShim, "ffshim_formatctx_program")
+
+	registerOptionalLibFunc(&shimChapterID, libShim, "ffshim_chapter_id")
+	registerOptionalLibFunc(&shimChapterTimeBase, libShim, "ffshim_chapter_time_base")
+	registerOptionalLibFunc(&shimChapterStart, libShim, "ffshim_chapter_start")
+	registerOptionalLibFunc(&shimChapterEnd, libShim, "ffshim_chapter_end")
+	registerOptionalLibFunc(&shimChapterMetadata, libShim, "ffshim_chapter_metadata")
+
+	registerOptionalLibFunc(&shimProgramID, libShim, "ffshim_program_id")
+	registerOptionalLibFunc(&shimProgramNbStreamIdx, libShim, "ffshim_program_nb_stream_indexes")
+	registerOptionalLibFunc(&shimProgramStreamIndexPtr, libShim, "ffshim_program_stream_index")
+	registerOptionalLibFunc(&shimProgramMetadata, libShim, "ffshim_program_metadata")
 }
 
 func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
@@ -577,6 +615,157 @@ func CodecCtxSetFramerate(ctx unsafe.Pointer, num, den int32) error {
 	}
 	shimCodecCtxSetFramerate(uintptr(ctx), num, den)
 	return nil
+}
+
+func FormatCtxDuration(ctx unsafe.Pointer) (int64, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimFormatCtxDuration == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimFormatCtxDuration(uintptr(ctx)), nil
+}
+
+func FormatCtxBitRate(ctx unsafe.Pointer) (int64, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimFormatCtxBitRate == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimFormatCtxBitRate(uintptr(ctx)), nil
+}
+
+func FormatCtxNbChapters(ctx unsafe.Pointer) (int, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimFormatCtxNbChapters == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return int(shimFormatCtxNbChapters(uintptr(ctx))), nil
+}
+
+func FormatCtxChapter(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	if !loaded || shimFormatCtxChapter == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimFormatCtxChapter(uintptr(ctx), int32(index))), nil
+}
+
+func FormatCtxNbPrograms(ctx unsafe.Pointer) (int, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimFormatCtxNbPrograms == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return int(shimFormatCtxNbPrograms(uintptr(ctx))), nil
+}
+
+func FormatCtxProgram(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	if !loaded || shimFormatCtxProgram == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimFormatCtxProgram(uintptr(ctx), int32(index))), nil
+}
+
+func ChapterID(ch unsafe.Pointer) (int64, error) {
+	if ch == nil {
+		return 0, nil
+	}
+	if !loaded || shimChapterID == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimChapterID(uintptr(ch)), nil
+}
+
+func ChapterTimeBase(ch unsafe.Pointer) (num, den int32, err error) {
+	if ch == nil {
+		return 0, 1, nil
+	}
+	if !loaded || shimChapterTimeBase == nil {
+		return 0, 0, ErrShimNotLoaded
+	}
+	shimChapterTimeBase(uintptr(ch), &num, &den)
+	return num, den, nil
+}
+
+func ChapterStart(ch unsafe.Pointer) (int64, error) {
+	if ch == nil {
+		return 0, nil
+	}
+	if !loaded || shimChapterStart == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimChapterStart(uintptr(ch)), nil
+}
+
+func ChapterEnd(ch unsafe.Pointer) (int64, error) {
+	if ch == nil {
+		return 0, nil
+	}
+	if !loaded || shimChapterEnd == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimChapterEnd(uintptr(ch)), nil
+}
+
+func ChapterMetadata(ch unsafe.Pointer) (unsafe.Pointer, error) {
+	if ch == nil {
+		return nil, nil
+	}
+	if !loaded || shimChapterMetadata == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimChapterMetadata(uintptr(ch))), nil
+}
+
+func ProgramID(p unsafe.Pointer) (int32, error) {
+	if p == nil {
+		return 0, nil
+	}
+	if !loaded || shimProgramID == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimProgramID(uintptr(p)), nil
+}
+
+func ProgramNbStreamIndexes(p unsafe.Pointer) (int, error) {
+	if p == nil {
+		return 0, nil
+	}
+	if !loaded || shimProgramNbStreamIdx == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return int(shimProgramNbStreamIdx(uintptr(p))), nil
+}
+
+func ProgramStreamIndexPtr(p unsafe.Pointer) (unsafe.Pointer, error) {
+	if p == nil {
+		return nil, nil
+	}
+	if !loaded || shimProgramStreamIndexPtr == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimProgramStreamIndexPtr(uintptr(p))), nil
+}
+
+func ProgramMetadata(p unsafe.Pointer) (unsafe.Pointer, error) {
+	if p == nil {
+		return nil, nil
+	}
+	if !loaded || shimProgramMetadata == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimProgramMetadata(uintptr(p))), nil
 }
 
 // findShimLibrary looks for the shim library in standard locations.
