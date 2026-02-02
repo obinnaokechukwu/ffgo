@@ -619,6 +619,13 @@ func SetCtxGopSize(ctx Context, size int32) {
 	if ctx == nil {
 		return
 	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "g", int64(size), 0); err == nil {
+		return
+	}
+	if err := avutil.OptSetInt(ctx, "gop_size", int64(size), 0); err == nil {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxGopSize)) = size
 }
 
@@ -627,12 +634,26 @@ func SetCtxMaxBFrames(ctx Context, max int32) {
 	if ctx == nil {
 		return
 	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "bf", int64(max), 0); err == nil {
+		return
+	}
+	if err := avutil.OptSetInt(ctx, "max_b_frames", int64(max), 0); err == nil {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxMaxBFrames)) = max
 }
 
 // SetCtxBitRate sets the bit rate in codec context.
 func SetCtxBitRate(ctx Context, bitRate int64) {
 	if ctx == nil {
+		return
+	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "b", bitRate, 0); err == nil {
+		return
+	}
+	if err := avutil.OptSetInt(ctx, "bit_rate", bitRate, 0); err == nil {
 		return
 	}
 	*(*int64)(unsafe.Pointer(uintptr(ctx) + offsetCtxBitRate)) = bitRate
@@ -649,6 +670,10 @@ func GetCtxFlags(ctx Context) int32 {
 // SetCtxFlags sets the flags in codec context.
 func SetCtxFlags(ctx Context, flags int32) {
 	if ctx == nil {
+		return
+	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "flags", int64(flags), 0); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFlags)) = flags
@@ -688,6 +713,13 @@ func SetCtxSampleRate(ctx Context, sampleRate int32) {
 	if ctx == nil {
 		return
 	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "ar", int64(sampleRate), 0); err == nil {
+		return
+	}
+	if err := avutil.OptSetInt(ctx, "sample_rate", int64(sampleRate), 0); err == nil {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleRate)) = sampleRate
 }
 
@@ -712,6 +744,10 @@ func GetCtxSampleFmt(ctx Context) int32 {
 // SetCtxSampleFmt sets the sample format in codec context.
 func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
 	if ctx == nil {
+		return
+	}
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	if err := avutil.OptSetInt(ctx, "sample_fmt", int64(sampleFmt), 0); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt)) = sampleFmt
