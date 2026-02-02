@@ -54,12 +54,12 @@ var (
 	// Function bindings
 	shimLogSetCallback func(cb uintptr)
 	shimLogSetLevel    func(level int32)
-	shimLog            func(avcl unsafe.Pointer, level int32, msg string)
-	shimNewChapter     func(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) uintptr
+	shimLog            func(avcl uintptr, level int32, msg string)
+	shimNewChapter     func(ctx uintptr, id int64, tbNum, tbDen int32, start, end int64, metadata uintptr) uintptr
 
 	// Device enumeration helpers (libavdevice wrappers)
-	shimAVDeviceListInputSources func(formatName, deviceName string, avdictOpts unsafe.Pointer, outCount *int32, outNames, outDescs *unsafe.Pointer) int32
-	shimAVDeviceFreeStringArray  func(arr unsafe.Pointer, count int32)
+	shimAVDeviceListInputSources func(formatName, deviceName string, avdictOpts uintptr, outCount *int32, outNames, outDescs *unsafe.Pointer) int32
+	shimAVDeviceFreeStringArray  func(arr uintptr, count int32)
 
 	// AVFrame offset discovery helpers
 	shimAVFrameColorOffsets func(outRange, outSpace, outPrimaries, outTransfer *int32) int32
@@ -273,7 +273,7 @@ func Log(avcl unsafe.Pointer, level int32, msg string) error {
 	if shimLog == nil {
 		return errors.New("ffgo: shimLog symbol not available in shim")
 	}
-	shimLog(avcl, level, msg)
+	shimLog(uintptr(avcl), level, msg)
 	return nil
 }
 
@@ -286,7 +286,7 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 	if shimNewChapter == nil {
 		return nil, errors.New("ffgo: shimNewChapter symbol not available in shim")
 	}
-	ch := unsafe.Pointer(shimNewChapter(ctx, id, tbNum, tbDen, start, end, metadata))
+	ch := unsafe.Pointer(shimNewChapter(uintptr(ctx), id, tbNum, tbDen, start, end, uintptr(metadata)))
 	if ch == nil {
 		return nil, errors.New("ffgo: failed to create chapter")
 	}
@@ -311,7 +311,7 @@ func AVDeviceListInputSources(formatName, deviceName string, avdictOpts unsafe.P
 	var c int32
 	var n unsafe.Pointer
 	var d unsafe.Pointer
-	ret := shimAVDeviceListInputSources(formatName, deviceName, avdictOpts, &c, &n, &d)
+	ret := shimAVDeviceListInputSources(formatName, deviceName, uintptr(avdictOpts), &c, &n, &d)
 	if ret < 0 {
 		return 0, nil, nil, fmt.Errorf("ffgo: avdevice_list_input_sources failed (error %d)", ret)
 	}
@@ -323,7 +323,7 @@ func AVDeviceFreeStringArray(arr unsafe.Pointer, count int) {
 	if !loaded || shimAVDeviceFreeStringArray == nil || arr == nil || count <= 0 {
 		return
 	}
-	shimAVDeviceFreeStringArray(arr, int32(count))
+	shimAVDeviceFreeStringArray(uintptr(arr), int32(count))
 }
 
 // AVFrameColorOffsets returns AVFrame field offsets (bytes) for:

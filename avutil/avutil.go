@@ -31,39 +31,39 @@ type HWFramesContext = unsafe.Pointer
 	var (
 		avFrameAlloc        func() uintptr
 		avFrameFree         func(frame *unsafe.Pointer)
-		avFrameRef          func(dst, src unsafe.Pointer) int32
-		avFrameUnref        func(frame unsafe.Pointer)
-		avFrameGetBuffer    func(frame unsafe.Pointer, align int32) int32
-		avFrameMakeWritable func(frame unsafe.Pointer) int32
+		avFrameRef          func(dst, src uintptr) int32
+		avFrameUnref        func(frame uintptr)
+		avFrameGetBuffer    func(frame uintptr, align int32) int32
+		avFrameMakeWritable func(frame uintptr) int32
 
 		avMalloc func(size uintptr) uintptr
-		avFree   func(ptr unsafe.Pointer)
+		avFree   func(ptr uintptr)
 		avFreep  func(ptr *unsafe.Pointer)
 
 		avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
-		avDictGet  func(m unsafe.Pointer, key string, prev unsafe.Pointer, flags int32) uintptr
+		avDictGet  func(m uintptr, key string, prev uintptr, flags int32) uintptr
 		avDictFree func(pm *unsafe.Pointer)
 
-	avStrerror func(errnum int32, errbuf unsafe.Pointer, errbufSize uintptr) int32
+		avStrerror func(errnum int32, errbuf *byte, errbufSize uintptr) int32
 
-	// Channel layout functions (FFmpeg 5.1+)
-	avChannelLayoutDefault func(chLayout unsafe.Pointer, nbChannels int32)
-	avChannelLayoutCopy    func(dst, src unsafe.Pointer) int32
+		// Channel layout functions (FFmpeg 5.1+)
+		avChannelLayoutDefault func(chLayout uintptr, nbChannels int32)
+		avChannelLayoutCopy    func(dst, src uintptr) int32
 
-	// AVOptions API (for setting codec options like preset, profile, etc.)
-	avOptSet       func(obj unsafe.Pointer, name, val string, searchFlags int32) int32
-	avOptSetInt    func(obj unsafe.Pointer, name string, val int64, searchFlags int32) int32
-	avOptSetDouble func(obj unsafe.Pointer, name string, val float64, searchFlags int32) int32
+		// AVOptions API (for setting codec options like preset, profile, etc.)
+		avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
+		avOptSetInt    func(obj uintptr, name string, val int64, searchFlags int32) int32
+		avOptSetDouble func(obj uintptr, name string, val float64, searchFlags int32) int32
 
 		// Hardware context functions
-		avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts unsafe.Pointer, flags int32) int32
+		avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
 		avHWDeviceFindTypeByName func(name string) int32
 		avHWDeviceGetTypeName    func(deviceType int32) uintptr
-		avHWFrameTransferData    func(dst, src unsafe.Pointer, flags int32) int32
+		avHWFrameTransferData    func(dst, src uintptr, flags int32) int32
 
 		// Buffer reference functions
-		avBufferCreate func(data unsafe.Pointer, size int32, freeCb uintptr, opaque unsafe.Pointer, flags int32) uintptr
-		avBufferRef    func(buf unsafe.Pointer) uintptr
+		avBufferCreate func(data uintptr, size int32, freeCb uintptr, opaque uintptr, flags int32) uintptr
+		avBufferRef    func(buf uintptr) uintptr
 		avBufferUnref  func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
@@ -155,7 +155,7 @@ func FrameRef(dst, src Frame) error {
 	if avFrameRef == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avFrameRef(dst, src)
+	ret := avFrameRef(uintptr(dst), uintptr(src))
 	if ret < 0 {
 		return NewError(ret, "av_frame_ref")
 	}
@@ -167,7 +167,7 @@ func FrameUnref(frame Frame) {
 	if frame == nil || avFrameUnref == nil {
 		return
 	}
-	avFrameUnref(frame)
+	avFrameUnref(uintptr(frame))
 }
 
 // FrameGetBufferErr allocates buffers for the frame based on its format/dimensions.
@@ -178,7 +178,7 @@ func FrameGetBufferErr(frame Frame, align int32) error {
 	if avFrameGetBuffer == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avFrameGetBuffer(frame, align)
+	ret := avFrameGetBuffer(uintptr(frame), align)
 	if ret < 0 {
 		return NewError(ret, "av_frame_get_buffer")
 	}
@@ -191,7 +191,7 @@ func FrameMakeWritable(frame Frame) error {
 	if avFrameMakeWritable == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avFrameMakeWritable(frame)
+	ret := avFrameMakeWritable(uintptr(frame))
 	if ret < 0 {
 		return NewError(ret, "av_frame_make_writable")
 	}
@@ -365,7 +365,7 @@ func FrameGetBuffer(frame Frame, align int32) int32 {
 	if avFrameGetBuffer == nil {
 		return -1
 	}
-	return avFrameGetBuffer(frame, align)
+	return avFrameGetBuffer(uintptr(frame), align)
 }
 
 // GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.
@@ -424,7 +424,7 @@ func Free(ptr unsafe.Pointer) {
 	if ptr == nil || avFree == nil {
 		return
 	}
-	avFree(ptr)
+	avFree(uintptr(ptr))
 }
 
 // DictSet sets a key-value pair in a dictionary.
@@ -453,8 +453,9 @@ func ErrorString(errnum int32) string {
 		return "unknown error (FFmpeg not loaded)"
 	}
 
-	buf := make([]byte, 256)
-	avStrerror(errnum, unsafe.Pointer(&buf[0]), 256)
+	bufArr := new([256]byte)
+	avStrerror(errnum, &bufArr[0], 256)
+	buf := bufArr[:]
 
 	// Find null terminator
 	for i, b := range buf {
@@ -471,7 +472,7 @@ func ChannelLayoutDefault(chLayout unsafe.Pointer, nbChannels int32) {
 	if avChannelLayoutDefault == nil || chLayout == nil {
 		return
 	}
-	avChannelLayoutDefault(chLayout, nbChannels)
+	avChannelLayoutDefault(uintptr(chLayout), nbChannels)
 }
 
 // ChannelLayoutCopy copies a channel layout from src to dst.
@@ -479,7 +480,7 @@ func ChannelLayoutCopy(dst, src unsafe.Pointer) error {
 	if avChannelLayoutCopy == nil {
 		return nil
 	}
-	ret := avChannelLayoutCopy(dst, src)
+	ret := avChannelLayoutCopy(uintptr(dst), uintptr(src))
 	if ret < 0 {
 		return NewError(ret, "av_channel_layout_copy")
 	}
@@ -502,7 +503,7 @@ func OptSet(obj unsafe.Pointer, name, val string, searchFlags int32) error {
 	if obj == nil {
 		return NewError(-22, "av_opt_set: nil object")
 	}
-	ret := avOptSet(obj, name, val, searchFlags)
+	ret := avOptSet(uintptr(obj), name, val, searchFlags)
 	if ret < 0 {
 		return NewError(ret, "av_opt_set")
 	}
@@ -517,7 +518,7 @@ func OptSetInt(obj unsafe.Pointer, name string, val int64, searchFlags int32) er
 	if obj == nil {
 		return NewError(-22, "av_opt_set_int: nil object")
 	}
-	ret := avOptSetInt(obj, name, val, searchFlags)
+	ret := avOptSetInt(uintptr(obj), name, val, searchFlags)
 	if ret < 0 {
 		return NewError(ret, "av_opt_set_int")
 	}
@@ -532,7 +533,7 @@ func OptSetDouble(obj unsafe.Pointer, name string, val float64, searchFlags int3
 	if obj == nil {
 		return NewError(-22, "av_opt_set_double: nil object")
 	}
-	ret := avOptSetDouble(obj, name, val, searchFlags)
+	ret := avOptSetDouble(uintptr(obj), name, val, searchFlags)
 	if ret < 0 {
 		return NewError(ret, "av_opt_set_double")
 	}
@@ -567,7 +568,7 @@ func HWDeviceCtxCreate(deviceType HWDeviceType, device string) (HWDeviceContext,
 		return nil, bindings.ErrNotLoaded
 	}
 	var ctx unsafe.Pointer
-	ret := avHWDeviceCtxCreate(&ctx, int32(deviceType), device, nil, 0)
+	ret := avHWDeviceCtxCreate(&ctx, int32(deviceType), device, 0, 0)
 	if ret < 0 {
 		return nil, NewError(ret, "av_hwdevice_ctx_create")
 	}
@@ -601,7 +602,7 @@ func HWFrameTransferData(dst, src Frame, flags int32) error {
 	if avHWFrameTransferData == nil {
 		return bindings.ErrNotLoaded
 	}
-	ret := avHWFrameTransferData(dst, src, flags)
+	ret := avHWFrameTransferData(uintptr(dst), uintptr(src), flags)
 	if ret < 0 {
 		return NewError(ret, "av_hwframe_transfer_data")
 	}
@@ -616,7 +617,7 @@ func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque unsafe.P
 	if avBufferCreate == nil || data == nil || size <= 0 {
 		return nil
 	}
-	return unsafe.Pointer(avBufferCreate(data, int32(size), freeCb, opaque, flags))
+	return unsafe.Pointer(avBufferCreate(uintptr(data), int32(size), freeCb, uintptr(opaque), flags))
 }
 
 // NewBufferRef creates a new reference to a buffer.
@@ -624,7 +625,7 @@ func NewBufferRef(buf AVBufferRef) AVBufferRef {
 	if avBufferRef == nil || buf == nil {
 		return nil
 	}
-	return unsafe.Pointer(avBufferRef(buf))
+	return unsafe.Pointer(avBufferRef(uintptr(buf)))
 }
 
 // FreeBufferRef unreferences a buffer and sets the pointer to nil.

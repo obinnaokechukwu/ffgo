@@ -60,8 +60,8 @@ var (
 func initIOCallbacks() error {
 	ioCallbacksOnce.Do(func() {
 		// Read callback: int read_packet(void *opaque, uint8_t *buf, int buf_size)
-		readCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque unsafe.Pointer, buf *byte, bufSize int32) int32 {
-			ctx := handles.Lookup(uintptr(opaque))
+		readCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) int32 {
+			ctx := handles.Lookup(opaque)
 			if ctx == nil {
 				return -1
 			}
@@ -87,8 +87,8 @@ func initIOCallbacks() error {
 		})
 
 		// Write callback: int write_packet(void *opaque, uint8_t *buf, int buf_size)
-		writeCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque unsafe.Pointer, buf *byte, bufSize int32) int32 {
-			ctx := handles.Lookup(uintptr(opaque))
+		writeCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) int32 {
+			ctx := handles.Lookup(opaque)
 			if ctx == nil {
 				return -1
 			}
@@ -108,8 +108,8 @@ func initIOCallbacks() error {
 		})
 
 		// Seek callback: int64_t seek(void *opaque, int64_t offset, int whence)
-		seekCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque unsafe.Pointer, offset int64, whence int32) int64 {
-			ctx := handles.Lookup(uintptr(opaque))
+		seekCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, offset int64, whence int32) int64 {
+			ctx := handles.Lookup(opaque)
 			if ctx == nil {
 				return -1
 			}

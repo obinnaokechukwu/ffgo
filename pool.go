@@ -140,8 +140,8 @@ func WrappedBufferMemoryUsage() WrappedBufferUsage {
 
 func initWrapCallback() {
 	wrapOnce.Do(func() {
-		wrapFreeCBPtr = purego.NewCallback(func(_ purego.CDecl, opaque unsafe.Pointer, _ *byte) {
-			h := uintptr(opaque)
+		wrapFreeCBPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, _ *byte) {
+			h := opaque
 			v := handles.Lookup(h)
 			if v == nil {
 				return
