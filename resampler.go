@@ -2,6 +2,7 @@ package ffgo
 
 import (
 	"fmt"
+	"unsafe"
 
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/swresample"
@@ -68,7 +69,44 @@ func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 		return nil, fmt.Errorf("failed to initialize swresample: %w", err)
 	}
 
-	// Allocate and configure the resampler using legacy API (works with all FFmpeg versions)
+	// Prefer the AVChannelLayout API (FFmpeg 5.1+). FFmpeg 7 removed the legacy
+	// swr_alloc_set_opts symbol in some builds, so this path is required on macOS CI.
+	if ctx := swresample.Alloc(); ctx != nil {
+		const avChannelLayoutSize = 24 // sizeof(AVChannelLayout) on 64-bit FFmpeg 5.1+
+
+		outLayout := avutil.Malloc(avChannelLayoutSize)
+		inLayout := avutil.Malloc(avChannelLayoutSize)
+		if outLayout != nil && inLayout != nil {
+			setChannelLayoutMask(outLayout, dst.Channels, uint64(dst.ChannelLayout))
+			setChannelLayoutMask(inLayout, src.Channels, uint64(src.ChannelLayout))
+
+			if err := swresample.AllocSetOpts2(&ctx, outLayout, inLayout,
+				int32(dst.SampleFormat), int32(src.SampleFormat),
+				int32(dst.SampleRate), int32(src.SampleRate)); err == nil {
+				avutil.Free(outLayout)
+				avutil.Free(inLayout)
+
+				if err := swresample.InitContext(ctx); err != nil {
+					swresample.Free(&ctx)
+					return nil, fmt.Errorf("failed to initialize swresample context: %w", err)
+				}
+				return &Resampler{
+					ctx:       ctx,
+					srcFormat: src,
+					dstFormat: dst,
+				}, nil
+			}
+		}
+		if outLayout != nil {
+			avutil.Free(outLayout)
+		}
+		if inLayout != nil {
+			avutil.Free(inLayout)
+		}
+		swresample.Free(&ctx)
+	}
+
+	// Fallback to legacy channel layout bitmask API (older FFmpeg).
 	ctx := swresample.AllocSetOpts(nil,
 		int64(dst.ChannelLayout), int32(dst.SampleFormat), int32(dst.SampleRate),
 		int64(src.ChannelLayout), int32(src.SampleFormat), int32(src.SampleRate))
@@ -87,6 +125,27 @@ func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 		srcFormat: src,
 		dstFormat: dst,
 	}, nil
+}
+
+func setChannelLayoutMask(layout unsafe.Pointer, channels int, mask uint64) {
+	if layout == nil {
+		return
+	}
+	if channels <= 0 {
+		return
+	}
+
+	// AVChannelLayout (FFmpeg 5.1+):
+	// - order (int32): 0
+	// - nb_channels (int32): 4
+	// - u.mask (uint64): 8
+	// - opaque (void*): 16
+	const channelOrderNative = int32(1) // AV_CHANNEL_ORDER_NATIVE
+
+	*(*int32)(layout) = channelOrderNative
+	*(*int32)(unsafe.Add(layout, 4)) = int32(channels)
+	*(*uint64)(unsafe.Add(layout, 8)) = mask
+	*(*unsafe.Pointer)(unsafe.Add(layout, 16)) = nil
 }
 
 // Resample converts an audio frame
@@ -114,7 +173,7 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	inSamples := int(avutil.GetFrameNbSamples(frame.ptr))
 	outSamples := swresample.GetOutSamples(r.ctx, inSamples)
 	if outSamples <= 0 {
-		outSamples = inSamples * r.dstFormat.SampleRate / r.srcFormat.SampleRate + 256
+		outSamples = inSamples*r.dstFormat.SampleRate/r.srcFormat.SampleRate + 256
 	}
 	avutil.FrameSetNbSamples(outFrame, int32(outSamples))
 
