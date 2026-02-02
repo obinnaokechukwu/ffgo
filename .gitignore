@@ -1,0 +1,5 @@
+# Local shim build artifacts (not for commit; prebuilt shims live under shim/prebuilt/)
+libffshim.so
+libffshim.dylib
+ffshim.dll
+
