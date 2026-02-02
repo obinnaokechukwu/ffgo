@@ -129,7 +129,8 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o myapp
 |----|--------------|--------|
 | Linux | amd64, arm64 | ✅ Fully supported |
 | macOS | amd64, arm64 | ✅ Fully supported |
-| Windows | amd64, arm64 | ✅ Fully supported |
+| Windows | amd64 | ✅ Fully supported |
+| Windows | arm64 | ⚠️ Best-effort (typically via x64 emulation) |
 | FreeBSD | amd64, arm64 | ⚠️ Best-effort |
 
 **Not supported**: iOS, Android, 32-bit systems
