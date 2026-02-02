@@ -35,9 +35,9 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Linux amd64
-          - os: macos-13
+          - os: macos-15-intel
             name: macOS Intel
-          - os: macos-14
+          - os: macos-15
             name: macOS ARM64
           # Windows tests are more complex due to FFmpeg setup
           # - os: windows-latest
