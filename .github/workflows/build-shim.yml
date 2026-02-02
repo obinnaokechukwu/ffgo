@@ -66,6 +66,13 @@ jobs:
           # pin amd64 repos to amd64 and use ports.ubuntu.com for arm64.
           codename="$(lsb_release -cs)"
 
+          # Ubuntu 24.04 runners use deb822 .sources files by default. If we leave
+          # them enabled after adding arm64, apt will try to fetch arm64 indexes
+          # from security.ubuntu.com and fail with 404s. Replace sources with an
+          # explicit multiarch configuration.
+          sudo rm -f /etc/apt/sources.list.d/*.sources || true
+          sudo rm -f /etc/apt/sources.list.d/*.list || true
+
           sudo tee /etc/apt/sources.list >/dev/null <<EOF
           deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename} main restricted universe multiverse
           deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename}-updates main restricted universe multiverse
