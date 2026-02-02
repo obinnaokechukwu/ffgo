@@ -798,16 +798,39 @@ func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 		return
 	}
 
-	// Get pointer to ch_layout struct
+	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
+	// FFmpeg 7+ (libavcodec 62) is stricter about channel layouts for some encoders (e.g. AAC).
+	_ = avutil.OptSetInt(ctx, "ac", int64(nbChannels), 0)
+	_ = avutil.OptSetInt(ctx, "channels", int64(nbChannels), 0)
+
+	var layout string
+	switch nbChannels {
+	case 1:
+		layout = "mono"
+	case 2:
+		layout = "stereo"
+	case 6:
+		layout = "5.1"
+	}
+	if layout != "" {
+		if err := avutil.OptSet(ctx, "ch_layout", layout, 0); err == nil {
+			return
+		}
+		if err := avutil.OptSet(ctx, "channel_layout", layout, 0); err == nil {
+			return
+		}
+	}
+
+	// Fallback: legacy direct struct writes (best-effort). Avoid on macOS where FFmpeg
+	// struct layouts commonly differ from hardcoded offsets and can corrupt the context.
+	if runtime.GOOS == "darwin" {
+		return
+	}
+
 	chLayoutPtr := uintptr(ctx) + offsetCtxChLayout
-
-	// Set order = AV_CHANNEL_ORDER_NATIVE (1)
 	*(*int32)(unsafe.Pointer(chLayoutPtr)) = ChannelOrderNative
-
-	// Set nb_channels
 	*(*int32)(unsafe.Pointer(chLayoutPtr + 4)) = nbChannels
 
-	// Set mask based on channel count
 	var mask uint64
 	switch nbChannels {
 	case 1:
@@ -817,12 +840,9 @@ func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 	case 6:
 		mask = ChannelLayoutMask5Point1
 	default:
-		// For other channel counts, use native order with computed mask
 		mask = (1 << uint(nbChannels)) - 1
 	}
 	*(*uint64)(unsafe.Pointer(chLayoutPtr + 8)) = mask
-
-	// opaque should be NULL (already zeroed)
 }
 
 // GetCtxTimeBase returns the time base from codec context.
