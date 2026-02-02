@@ -800,6 +800,7 @@ func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 
 	// Best-effort: if the shim is available, use it to set AVCodecContext->ch_layout
 	// via FFmpeg APIs (avoids all struct offset issues on FFmpeg 7+).
+	_ = ffshim.Load()
 	if err := ffshim.CodecCtxSetChLayoutDefault(ctx, nbChannels); err == nil {
 		return
 	}
