@@ -174,6 +174,10 @@ A tiny C shim library handles FFmpeg features that pure Go cannot call safely/po
 
 The shim is still optional in the sense that ffgo will run without it, but on some macOS/FFmpeg combinations, features like hardware decode or accurate duration/chapters/programs may require the shim to be present.
 
+#### Prebuilt shims
+
+This module includes prebuilt shims under `shim/prebuilt/<os>-<arch>/` and will load them automatically when present (no user compilation required). If your platform/arch isn’t shipped yet, you can build one with `cd shim && ./build.sh`.
+
 ## More Examples
 
 ### Custom I/O with io.Reader

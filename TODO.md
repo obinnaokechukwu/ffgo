@@ -41,6 +41,19 @@ and updated Go accessors to prefer shim helpers on platforms where struct offset
 
 **Result:** CI (including macOS Intel + macOS ARM64) is green again.
 
+---
+
+### 4. Prebuilt shim availability across OS/arch — Resolved (2026-02-02)
+
+**Goal:** library users should not need to compile `ffshim` themselves.
+
+**Result:**
+- The repo now ships prebuilt shim binaries under `shim/prebuilt/<os>-<arch>/`:
+  - `linux/amd64`, `linux/arm64`
+  - `darwin/amd64`, `darwin/arm64`
+  - `windows/amd64`
+- The `Build Shim` workflow reliably builds all of the above (including `linux/arm64` via multiarch cross-build) and packages them on every run.
+
 ## Completed
 
 - [x] Replace LICENSE throughout history with Apache 2.0
@@ -49,3 +62,4 @@ and updated Go accessors to prefer shim helpers on platforms where struct offset
 - [x] Remove `.envrc` from public repo
 - [x] Add cross-platform shim build system
 - [x] Add GitHub Actions CI workflows
+- [x] Ship prebuilt shims for supported platforms
