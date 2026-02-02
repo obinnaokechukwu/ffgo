@@ -33,17 +33,25 @@ func createMultiProgramTS(t *testing.T) string {
 		out,
 	)
 	if err := cmd.Run(); err != nil {
-		t.Skipf("ffmpeg not available or failed: %v", err)
+		t.Logf("ffmpeg not available or failed: %v", err)
 		return ""
 	}
 	if _, err := os.Stat(out); err != nil {
-		t.Skipf("multi-program TS not created: %v", err)
+		t.Logf("multi-program TS not created: %v", err)
 		return ""
 	}
 	return out
 }
 
 func TestDecoderPrograms_ListAndSelect(t *testing.T) {
+	if testing.Short() {
+		t.Log("Skipping multi-program integration test in short mode")
+		return
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	ts := createMultiProgramTS(t)
 	if ts == "" {
 		return

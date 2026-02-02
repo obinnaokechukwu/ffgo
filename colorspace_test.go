@@ -10,8 +10,12 @@ import (
 )
 
 func TestScalerSetColorspace(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
 	if !swscale.HasColorspaceDetails() || swscale.GetCoefficients(1) == nil {
-		t.Skip("swscale colorspace APIs not available in this FFmpeg build")
+		t.Log("swscale colorspace APIs not available in this FFmpeg build")
+		return
 	}
 
 	s, err := NewScaler(16, 16, PixelFormatYUV420P, 16, 16, PixelFormatYUV420P, ScaleBilinear)

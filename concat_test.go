@@ -28,6 +28,10 @@ func TestNewConcatDecoder_Errors(t *testing.T) {
 }
 
 func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	in := filepath.Join("testdata", "test.mp4")
 
 	// Baseline single-file duration + frame count.

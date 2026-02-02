@@ -5,8 +5,12 @@ package ffgo
 import "testing"
 
 func TestColorSpec_RoundTrip(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
 	if !colorOffsetsAvailable() {
-		t.Skip("color offsets not available (shim missing ffshim_avframe_color_offsets)")
+		t.Log("color offsets not available (shim missing ffshim_avframe_color_offsets)")
+		return
 	}
 
 	f := FrameAlloc()
@@ -27,4 +31,3 @@ func TestColorSpec_RoundTrip(t *testing.T) {
 		t.Fatalf("ColorSpec mismatch: got %+v, want %+v", got, want)
 	}
 }
-

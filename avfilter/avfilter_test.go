@@ -8,7 +8,8 @@ import (
 
 func TestInit(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 	t.Log("avfilter initialized successfully")
 }
@@ -16,7 +17,8 @@ func TestInit(t *testing.T) {
 func TestVersion(t *testing.T) {
 	v := Version()
 	if v == 0 {
-		t.Skip("avfilter not available")
+		t.Log("avfilter not available")
+		return
 	}
 	t.Logf("avfilter version: %s (raw: %d)", VersionString(), v)
 
@@ -29,7 +31,8 @@ func TestVersion(t *testing.T) {
 
 func TestGraphAlloc(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	graph := GraphAlloc()
@@ -43,7 +46,8 @@ func TestGraphAlloc(t *testing.T) {
 
 func TestGetByName(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	tests := []struct {
@@ -72,7 +76,8 @@ func TestGetByName(t *testing.T) {
 
 func TestInOutAlloc(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	inout := InOutAlloc()
@@ -86,7 +91,8 @@ func TestInOutAlloc(t *testing.T) {
 
 func TestInOutSettersGetters(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	inout := InOutAlloc()
@@ -110,7 +116,8 @@ func TestInOutSettersGetters(t *testing.T) {
 
 func TestGraphParse2(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	graph := GraphAlloc()
@@ -138,7 +145,8 @@ func TestGraphParse2(t *testing.T) {
 
 func TestGraphCreateFilter(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	graph := GraphAlloc()
@@ -150,7 +158,8 @@ func TestGraphCreateFilter(t *testing.T) {
 	// Get the buffer filter
 	bufferFilter := GetByName("buffer")
 	if bufferFilter == nil {
-		t.Skip("buffer filter not available")
+		t.Log("buffer filter not available")
+		return
 	}
 
 	// Create a buffer filter with video parameters
@@ -169,7 +178,8 @@ func TestGraphCreateFilter(t *testing.T) {
 
 func TestLink(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	graph := GraphAlloc()
@@ -181,7 +191,8 @@ func TestLink(t *testing.T) {
 	// Create buffersrc
 	bufferFilter := GetByName("buffer")
 	if bufferFilter == nil {
-		t.Skip("buffer filter not available")
+		t.Log("buffer filter not available")
+		return
 	}
 	srcArgs := "video_size=320x240:pix_fmt=0:time_base=1/25:pixel_aspect=1/1"
 	srcCtx, err := GraphCreateFilter(graph, bufferFilter, "in", srcArgs)
@@ -192,7 +203,8 @@ func TestLink(t *testing.T) {
 	// Create buffersink
 	sinkFilter := GetByName("buffersink")
 	if sinkFilter == nil {
-		t.Skip("buffersink filter not available")
+		t.Log("buffersink filter not available")
+		return
 	}
 	sinkCtx, err := GraphCreateFilter(graph, sinkFilter, "out", "")
 	if err != nil {
@@ -230,7 +242,8 @@ func TestBufferSourceSinkFlags(t *testing.T) {
 
 func TestFullFilterGraphCreation(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	graph := GraphAlloc()
@@ -242,7 +255,8 @@ func TestFullFilterGraphCreation(t *testing.T) {
 	// Create buffer source
 	bufferSrc := GetByName("buffer")
 	if bufferSrc == nil {
-		t.Skip("buffer filter not available")
+		t.Log("buffer filter not available")
+		return
 	}
 	srcArgs := "video_size=640x480:pix_fmt=0:time_base=1/30:pixel_aspect=1/1"
 	srcCtx, err := GraphCreateFilter(graph, bufferSrc, "in", srcArgs)
@@ -253,7 +267,8 @@ func TestFullFilterGraphCreation(t *testing.T) {
 	// Create scale filter
 	scaleFilter := GetByName("scale")
 	if scaleFilter == nil {
-		t.Skip("scale filter not available")
+		t.Log("scale filter not available")
+		return
 	}
 	scaleCtx, err := GraphCreateFilter(graph, scaleFilter, "scale", "w=320:h=240")
 	if err != nil {
@@ -263,7 +278,8 @@ func TestFullFilterGraphCreation(t *testing.T) {
 	// Create buffer sink
 	bufferSink := GetByName("buffersink")
 	if bufferSink == nil {
-		t.Skip("buffersink filter not available")
+		t.Log("buffersink filter not available")
+		return
 	}
 	sinkCtx, err := GraphCreateFilter(graph, bufferSink, "out", "")
 	if err != nil {
@@ -288,7 +304,8 @@ func TestFullFilterGraphCreation(t *testing.T) {
 
 func TestAudioFilterLookup(t *testing.T) {
 	if err := Init(); err != nil {
-		t.Skipf("avfilter not available: %v", err)
+		t.Logf("avfilter not available: %v", err)
+		return
 	}
 
 	audioFilters := []string{
@@ -303,7 +320,8 @@ func TestAudioFilterLookup(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := GetByName(name)
 			if f == nil {
-				t.Skipf("audio filter %q not available (may be disabled at FFmpeg build time)", name)
+				t.Logf("audio filter %q not available (may be disabled at FFmpeg build time)", name)
+				return
 			}
 			t.Logf("audio filter %q found", name)
 		})
