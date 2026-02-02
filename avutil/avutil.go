@@ -47,9 +47,8 @@ var (
 	avStrerror func(errnum int32, errbuf *byte, errbufSize uintptr) int32
 
 	// Channel layout functions (FFmpeg 5.1+)
-	avChannelLayoutDefault  func(chLayout uintptr, nbChannels int32)
-	avChannelLayoutCopy     func(dst, src uintptr) int32
-	avChannelLayoutFromMask func(chLayout uintptr, mask uint64) int32
+	avChannelLayoutDefault func(chLayout uintptr, nbChannels int32)
+	avChannelLayoutCopy    func(dst, src uintptr) int32
 
 	// AVOptions API (for setting codec options like preset, profile, etc.)
 	avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
@@ -111,7 +110,6 @@ func registerBindings() {
 	// Channel layout functions (FFmpeg 5.1+)
 	purego.RegisterLibFunc(&avChannelLayoutDefault, lib, "av_channel_layout_default")
 	purego.RegisterLibFunc(&avChannelLayoutCopy, lib, "av_channel_layout_copy")
-	registerOptionalLibFunc(&avChannelLayoutFromMask, lib, "av_channel_layout_from_mask")
 
 	// AVOptions API
 	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
@@ -130,11 +128,6 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avBufferUnref, lib, "av_buffer_unref")
 
 	bindingsRegistered = true
-}
-
-func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
-	defer func() { _ = recover() }()
-	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // FrameAlloc allocates an AVFrame and returns a pointer to it.
@@ -480,22 +473,6 @@ func ChannelLayoutDefault(chLayout unsafe.Pointer, nbChannels int32) {
 		return
 	}
 	avChannelLayoutDefault(uintptr(chLayout), nbChannels)
-}
-
-// ChannelLayoutFromMask sets a channel layout from a legacy uint64 channel mask.
-// This is supported on FFmpeg 5.1+.
-func ChannelLayoutFromMask(chLayout unsafe.Pointer, mask uint64) error {
-	if chLayout == nil {
-		return nil
-	}
-	if avChannelLayoutFromMask == nil {
-		return bindings.ErrNotLoaded
-	}
-	ret := avChannelLayoutFromMask(uintptr(chLayout), mask)
-	if ret < 0 {
-		return NewError(ret, "av_channel_layout_from_mask")
-	}
-	return nil
 }
 
 // ChannelLayoutCopy copies a channel layout from src to dst.

@@ -33,8 +33,9 @@ var (
 	swr_close           func(s uintptr)
 
 	// For FFmpeg 5.1+ with AVChannelLayout
-	swr_alloc_set_opts2 func(ps *SwrContext, outChLayout, inChLayout uintptr,
-		outFmt, inFmt int32, outRate, inRate int32,
+	swr_alloc_set_opts2 func(ps *SwrContext,
+		outChLayout uintptr, outFmt, outRate int32,
+		inChLayout uintptr, inFmt, inRate int32,
 		logOffset int32, logCtx uintptr) int32
 
 	// Legacy API for older FFmpeg
@@ -116,8 +117,10 @@ func AllocSetOpts2(ps *SwrContext, outChLayout, inChLayout unsafe.Pointer,
 	if swr_alloc_set_opts2 == nil {
 		return fmt.Errorf("swr_alloc_set_opts2 not available (FFmpeg < 5.1)")
 	}
-	ret := swr_alloc_set_opts2(ps, uintptr(outChLayout), uintptr(inChLayout), outSampleFmt, inSampleFmt,
-		outSampleRate, inSampleRate, 0, 0)
+	ret := swr_alloc_set_opts2(ps,
+		uintptr(outChLayout), outSampleFmt, outSampleRate,
+		uintptr(inChLayout), inSampleFmt, inSampleRate,
+		0, 0)
 	if ret < 0 {
 		return fmt.Errorf("swr_alloc_set_opts2 failed: %d", ret)
 	}
