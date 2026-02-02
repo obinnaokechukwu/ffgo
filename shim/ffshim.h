@@ -140,6 +140,10 @@ void ffshim_codecctx_set_time_base(void *ctx, int num, int den);
 void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den);
 void ffshim_codecctx_set_framerate(void *ctx, int num, int den);
 void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels);
+void* ffshim_codecctx_hw_device_ctx(void *ctx);
+void ffshim_codecctx_set_hw_device_ctx(void *ctx, void *ref);
+void* ffshim_codecctx_hw_frames_ctx(void *ctx);
+void ffshim_codecctx_set_hw_frames_ctx(void *ctx, void *ref);
 
 /* ============================================================================
  * FORMAT FIELD HELPERS (OPTIONAL)

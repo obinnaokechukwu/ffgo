@@ -85,6 +85,10 @@ var (
 	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
 	shimCodecCtxSetFramerate func(ctx uintptr, num, den int32)
 	shimCodecCtxSetChLayout  func(ctx uintptr, nbChannels int32)
+	shimCodecCtxHWDeviceCtx  func(ctx uintptr) uintptr
+	shimCodecCtxSetHWDevice  func(ctx uintptr, ref uintptr)
+	shimCodecCtxHWFramesCtx  func(ctx uintptr) uintptr
+	shimCodecCtxSetHWFrames  func(ctx uintptr, ref uintptr)
 
 	// AVFormatContext / chapter / program helpers (optional)
 	shimFormatCtxDuration    func(ctx uintptr) int64
@@ -294,6 +298,10 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
 	registerOptionalLibFunc(&shimCodecCtxSetFramerate, libShim, "ffshim_codecctx_set_framerate")
 	registerOptionalLibFunc(&shimCodecCtxSetChLayout, libShim, "ffshim_codecctx_set_ch_layout_default")
+	registerOptionalLibFunc(&shimCodecCtxHWDeviceCtx, libShim, "ffshim_codecctx_hw_device_ctx")
+	registerOptionalLibFunc(&shimCodecCtxSetHWDevice, libShim, "ffshim_codecctx_set_hw_device_ctx")
+	registerOptionalLibFunc(&shimCodecCtxHWFramesCtx, libShim, "ffshim_codecctx_hw_frames_ctx")
+	registerOptionalLibFunc(&shimCodecCtxSetHWFrames, libShim, "ffshim_codecctx_set_hw_frames_ctx")
 
 	// AVFormatContext / chapter / program helpers (optional)
 	registerOptionalLibFunc(&shimFormatCtxDuration, libShim, "ffshim_formatctx_duration")
@@ -614,6 +622,48 @@ func CodecCtxSetFramerate(ctx unsafe.Pointer, num, den int32) error {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetFramerate(uintptr(ctx), num, den)
+	return nil
+}
+
+func CodecCtxHWDeviceCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	if !loaded || shimCodecCtxHWDeviceCtx == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimCodecCtxHWDeviceCtx(uintptr(ctx))), nil
+}
+
+func CodecCtxSetHWDeviceCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetHWDevice == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetHWDevice(uintptr(ctx), uintptr(ref))
+	return nil
+}
+
+func CodecCtxHWFramesCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
+	if ctx == nil {
+		return nil, nil
+	}
+	if !loaded || shimCodecCtxHWFramesCtx == nil {
+		return nil, ErrShimNotLoaded
+	}
+	return unsafe.Pointer(shimCodecCtxHWFramesCtx(uintptr(ctx))), nil
+}
+
+func CodecCtxSetHWFramesCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetHWFrames == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetHWFrames(uintptr(ctx), uintptr(ref))
 	return nil
 }
 

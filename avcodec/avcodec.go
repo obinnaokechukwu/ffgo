@@ -1024,6 +1024,13 @@ func GetCtxHWDeviceCtx(ctx Context) avutil.HWDeviceContext {
 	if ctx == nil {
 		return nil
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.CodecCtxHWDeviceCtx(ctx); err == nil {
+		return v
+	}
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx))
 }
 
@@ -1035,6 +1042,13 @@ func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) {
 	}
 	// Create a new reference to the buffer
 	ref := avutil.NewBufferRef(hwDeviceCtx)
+	_ = ffshim.Load()
+	if err := ffshim.CodecCtxSetHWDeviceCtx(ctx, ref); err == nil {
+		return
+	}
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx)) = ref
 }
 
@@ -1065,6 +1079,13 @@ func GetCtxHWFramesCtx(ctx Context) avutil.HWFramesContext {
 	if ctx == nil {
 		return nil
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.CodecCtxHWFramesCtx(ctx); err == nil {
+		return v
+	}
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx))
 }
 
@@ -1074,5 +1095,12 @@ func SetCtxHWFramesCtx(ctx Context, hwFramesCtx avutil.HWFramesContext) {
 		return
 	}
 	ref := avutil.NewBufferRef(hwFramesCtx)
+	_ = ffshim.Load()
+	if err := ffshim.CodecCtxSetHWFramesCtx(ctx, ref); err == nil {
+		return
+	}
+	if runtime.GOOS == "darwin" {
+		return
+	}
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx)) = ref
 }
