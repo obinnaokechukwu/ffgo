@@ -463,6 +463,10 @@ func GetNumPrograms(ctx FormatContext) int {
 	if ctx == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.FormatCtxNbPrograms(ctx); err == nil {
+		return v
+	}
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbPrograms)))
 }
 
@@ -474,6 +478,10 @@ func GetProgram(ctx FormatContext, index int) Program {
 	n := GetNumPrograms(ctx)
 	if index >= n {
 		return nil
+	}
+	_ = ffshim.Load()
+	if p, err := ffshim.FormatCtxProgram(ctx, index); err == nil {
+		return p
 	}
 	programsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetPrograms))
 	if programsPtr == nil {
@@ -488,6 +496,10 @@ func GetProgramID(p Program) int {
 	if p == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ProgramID(p); err == nil {
+		return int(v)
+	}
 	return int(*(*int32)(unsafe.Pointer(uintptr(p) + offsetProgramID)))
 }
 
@@ -495,6 +507,20 @@ func GetProgramID(p Program) int {
 func GetProgramStreamIndexes(p Program) []int {
 	if p == nil {
 		return nil
+	}
+	_ = ffshim.Load()
+	if nb, err := ffshim.ProgramNbStreamIndexes(p); err == nil {
+		if nb <= 0 {
+			return nil
+		}
+		if ptr, err := ffshim.ProgramStreamIndexPtr(p); err == nil && ptr != nil {
+			raw := unsafe.Slice((*int32)(ptr), nb)
+			out := make([]int, 0, nb)
+			for _, v := range raw {
+				out = append(out, int(v))
+			}
+			return out
+		}
 	}
 	nb := int(*(*uint32)(unsafe.Pointer(uintptr(p) + offsetProgramNbStreamIndex)))
 	if nb <= 0 {
@@ -517,6 +543,10 @@ func GetProgramStreamIndexes(p Program) []int {
 func GetProgramMetadata(p Program) avutil.Dictionary {
 	if p == nil {
 		return nil
+	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ProgramMetadata(p); err == nil {
+		return avutil.Dictionary(v)
 	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(p) + offsetProgramMetadata))
 }
@@ -616,6 +646,10 @@ func GetDuration(ctx FormatContext) int64 {
 	if ctx == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.FormatCtxDuration(ctx); err == nil {
+		return v
+	}
 	return *(*int64)(unsafe.Pointer(uintptr(ctx) + offsetDuration))
 }
 
@@ -623,6 +657,10 @@ func GetDuration(ctx FormatContext) int64 {
 func GetBitRate(ctx FormatContext) int64 {
 	if ctx == nil {
 		return 0
+	}
+	_ = ffshim.Load()
+	if v, err := ffshim.FormatCtxBitRate(ctx); err == nil {
+		return v
 	}
 	return *(*int64)(unsafe.Pointer(uintptr(ctx) + offsetBitRate))
 }
@@ -1061,6 +1099,10 @@ func GetNumChapters(ctx FormatContext) int {
 	if ctx == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.FormatCtxNbChapters(ctx); err == nil {
+		return v
+	}
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbChapters)))
 }
 
@@ -1072,6 +1114,10 @@ func GetChapter(ctx FormatContext, index int) Chapter {
 	numChapters := GetNumChapters(ctx)
 	if index >= numChapters {
 		return nil
+	}
+	_ = ffshim.Load()
+	if ch, err := ffshim.FormatCtxChapter(ctx, index); err == nil {
+		return ch
 	}
 	chaptersPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetChapters))
 	if chaptersPtr == nil {
@@ -1086,6 +1132,10 @@ func GetChapterID(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ChapterID(ch); err == nil {
+		return v
+	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterID))
 }
 
@@ -1093,6 +1143,13 @@ func GetChapterID(ch Chapter) int64 {
 func GetChapterTimeBase(ch Chapter) (num, den int32) {
 	if ch == nil {
 		return 0, 1
+	}
+	_ = ffshim.Load()
+	if n, d, err := ffshim.ChapterTimeBase(ch); err == nil {
+		if d == 0 {
+			d = 1
+		}
+		return n, d
 	}
 	num = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase))
 	den = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase + 4))
@@ -1104,6 +1161,10 @@ func GetChapterStart(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ChapterStart(ch); err == nil {
+		return v
+	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterStart))
 }
 
@@ -1112,6 +1173,10 @@ func GetChapterEnd(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ChapterEnd(ch); err == nil {
+		return v
+	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterEnd))
 }
 
@@ -1119,6 +1184,10 @@ func GetChapterEnd(ch Chapter) int64 {
 func GetChapterMetadata(ch Chapter) avutil.Dictionary {
 	if ch == nil {
 		return nil
+	}
+	_ = ffshim.Load()
+	if v, err := ffshim.ChapterMetadata(ch); err == nil {
+		return avutil.Dictionary(v)
 	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ch) + offsetChapterMetadata))
 }

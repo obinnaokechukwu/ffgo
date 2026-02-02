@@ -141,6 +141,31 @@ void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den);
 void ffshim_codecctx_set_framerate(void *ctx, int num, int den);
 void ffshim_codecctx_set_ch_layout_default(void *ctx, int nb_channels);
 
+/* ============================================================================
+ * FORMAT FIELD HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+/* AVFormatContext field accessors */
+int64_t ffshim_formatctx_duration(void *ctx);
+int64_t ffshim_formatctx_bit_rate(void *ctx);
+unsigned int ffshim_formatctx_nb_chapters(void *ctx);
+void* ffshim_formatctx_chapter(void *ctx, int index);
+unsigned int ffshim_formatctx_nb_programs(void *ctx);
+void* ffshim_formatctx_program(void *ctx, int index);
+
+/* AVChapter field accessors */
+int64_t ffshim_chapter_id(void *ch);
+void ffshim_chapter_time_base(void *ch, int *out_num, int *out_den);
+int64_t ffshim_chapter_start(void *ch);
+int64_t ffshim_chapter_end(void *ch);
+void* ffshim_chapter_metadata(void *ch);
+
+/* AVProgram field accessors */
+int ffshim_program_id(void *p);
+unsigned int ffshim_program_nb_stream_indexes(void *p);
+unsigned int* ffshim_program_stream_index(void *p);
+void* ffshim_program_metadata(void *p);
+
 #ifdef __cplusplus
 }
 #endif
