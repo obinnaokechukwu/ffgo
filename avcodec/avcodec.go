@@ -158,6 +158,23 @@ func FreeContext(ctx *Context) {
 	if ctx == nil || *ctx == nil || avcodecFreeContext == nil {
 		return
 	}
+
+	// On some platforms (notably macOS), passing a pointer-to-pointer that points
+	// into Go memory to foreign code can trigger runtime/libffi aborts. Avoid
+	// passing Go memory by staging the pointer in FFmpeg-allocated memory.
+	//
+	// This keeps the public API unchanged while making cleanup reliable across
+	// platforms and purego backends.
+	tmp := avutil.Malloc(unsafe.Sizeof(uintptr(0)))
+	if tmp != nil {
+		*(*unsafe.Pointer)(tmp) = *ctx
+		avcodecFreeContext((*unsafe.Pointer)(tmp))
+		avutil.Free(tmp)
+		*ctx = nil
+		return
+	}
+
+	// Fallback: best-effort free. If tmp allocation failed, use the direct call.
 	avcodecFreeContext(ctx)
 	*ctx = nil
 }
