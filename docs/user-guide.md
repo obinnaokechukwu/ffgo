@@ -1613,6 +1613,6 @@ Open an issue at https://github.com/obinnaokechukwu/ffgo/issues with:
 
 ## License
 
-ffgo is licensed under the MIT License.
+ffgo is licensed under the Apache 2.0 License.
 
 FFmpeg is licensed under LGPL/GPL. Ensure your usage complies with FFmpeg's license.
