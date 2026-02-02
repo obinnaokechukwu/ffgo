@@ -61,19 +61,29 @@ jobs:
 
           sudo dpkg --add-architecture arm64
 
-          # Add arm64 ports sources without mutating existing amd64 sources.
+          # The default Ubuntu sources on amd64 runners don't publish arm64 indexes
+          # for security.ubuntu.com, so after enabling multiarch we must explicitly
+          # pin amd64 repos to amd64 and use ports.ubuntu.com for arm64.
           codename="$(lsb_release -cs)"
+
+          sudo tee /etc/apt/sources.list >/dev/null <<EOF
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename} main restricted universe multiverse
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename}-updates main restricted universe multiverse
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename}-backports main restricted universe multiverse
+          deb [arch=amd64] http://security.ubuntu.com/ubuntu ${codename}-security main restricted universe multiverse
+          EOF
+
           sudo tee /etc/apt/sources.list.d/arm64-ports.list >/dev/null <<EOF
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename} main restricted universe multiverse
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-backports main restricted universe multiverse
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-security main restricted universe multiverse
           EOF
 
           sudo apt-get update
 
-          # Install arm64 FFmpeg dev libs (used by cross linker).
-          sudo apt-get install -y \
-            libavutil-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64
+          # Install arm64 FFmpeg dev libs (used by the cross linker).
+          sudo apt-get install -y libavutil-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64
 
       - name: Build shim
         working-directory: shim
