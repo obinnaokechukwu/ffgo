@@ -741,6 +741,17 @@ func GetCtxSampleFmt(ctx Context) int32 {
 	if ctx == nil {
 		return -1
 	}
+
+	// Prefer shim-based field access when available (avoids struct-layout assumptions).
+	_ = ffshim.Load()
+	if v, err := ffshim.CodecCtxSampleFmt(ctx); err == nil {
+		return v
+	}
+
+	// Fallback: legacy offset read. Avoid on macOS where FFmpeg struct layouts can differ.
+	if runtime.GOOS == "darwin" {
+		return -1
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt))
 }
 
@@ -749,13 +760,27 @@ func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
 	if ctx == nil {
 		return
 	}
+
+	// Best-effort: if the shim is available, set the field directly.
+	// This fixes platforms where AVOptions setting is insufficient and avoids struct offsets.
+	_ = ffshim.Load()
+	if err := ffshim.CodecCtxSetSampleFmt(ctx, sampleFmt); err == nil {
+		return
+	}
+
 	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
 	if name := sampleFormatName(sampleFmt); name != "" {
 		if err := avutil.OptSet(ctx, "sample_fmt", name, 0); err == nil {
 			return
 		}
+		if err := avutil.OptSet(ctx, "sample_fmt", name, avutil.AV_OPT_SEARCH_CHILDREN); err == nil {
+			return
+		}
 	}
 	if err := avutil.OptSetInt(ctx, "sample_fmt", int64(sampleFmt), 0); err == nil {
+		return
+	}
+	if err := avutil.OptSetInt(ctx, "sample_fmt", int64(sampleFmt), avutil.AV_OPT_SEARCH_CHILDREN); err == nil {
 		return
 	}
 	if runtime.GOOS == "darwin" {

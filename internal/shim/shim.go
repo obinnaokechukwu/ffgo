@@ -78,6 +78,8 @@ var (
 	shimCodecCtxSetHeight    func(ctx uintptr, height int32)
 	shimCodecCtxPixFmt       func(ctx uintptr) int32
 	shimCodecCtxSetPixFmt    func(ctx uintptr, pixFmt int32)
+	shimCodecCtxSampleFmt    func(ctx uintptr) int32
+	shimCodecCtxSetSampleFmt func(ctx uintptr, sampleFmt int32)
 	shimCodecCtxTimeBase     func(ctx uintptr, outNum, outDen *int32)
 	shimCodecCtxSetTimeBase  func(ctx uintptr, num, den int32)
 	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
@@ -266,6 +268,8 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimCodecCtxSetHeight, libShim, "ffshim_codecctx_set_height")
 	registerOptionalLibFunc(&shimCodecCtxPixFmt, libShim, "ffshim_codecctx_pix_fmt")
 	registerOptionalLibFunc(&shimCodecCtxSetPixFmt, libShim, "ffshim_codecctx_set_pix_fmt")
+	registerOptionalLibFunc(&shimCodecCtxSampleFmt, libShim, "ffshim_codecctx_sample_fmt")
+	registerOptionalLibFunc(&shimCodecCtxSetSampleFmt, libShim, "ffshim_codecctx_set_sample_fmt")
 	registerOptionalLibFunc(&shimCodecCtxTimeBase, libShim, "ffshim_codecctx_time_base")
 	registerOptionalLibFunc(&shimCodecCtxSetTimeBase, libShim, "ffshim_codecctx_set_time_base")
 	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
@@ -496,6 +500,27 @@ func CodecCtxSetPixFmt(ctx unsafe.Pointer, pixFmt int32) error {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetPixFmt(uintptr(ctx), pixFmt)
+	return nil
+}
+
+func CodecCtxSampleFmt(ctx unsafe.Pointer) (int32, error) {
+	if ctx == nil {
+		return -1, nil
+	}
+	if !loaded || shimCodecCtxSampleFmt == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecCtxSampleFmt(uintptr(ctx)), nil
+}
+
+func CodecCtxSetSampleFmt(ctx unsafe.Pointer, sampleFmt int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetSampleFmt == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetSampleFmt(uintptr(ctx), sampleFmt)
 	return nil
 }
 
