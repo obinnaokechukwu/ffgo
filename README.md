@@ -167,7 +167,12 @@ ffgo uses [purego](https://github.com/ebitengine/purego) to call FFmpeg's C libr
 
 ### Why a shim?
 
-A tiny C shim library (~10KB) handles FFmpeg's variadic logging functions, which pure Go cannot call. Without it, logging won't work, but decoding/encoding will.
+A tiny C shim library handles FFmpeg features that pure Go cannot call safely/portably via dynamic bindings:
+
+- Variadic APIs (e.g. `av_log`) for logging callbacks.
+- Selected field access for newer FFmpeg builds where struct layouts vary (notably macOS runners with FFmpeg 7.x). This keeps hardware-accel setup and some container metadata (duration/programs/chapters) reliable without hardcoding brittle offsets.
+
+The shim is still optional in the sense that ffgo will run without it, but on some macOS/FFmpeg combinations, features like hardware decode or accurate duration/chapters/programs may require the shim to be present.
 
 ## More Examples
 

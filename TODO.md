@@ -26,6 +26,21 @@ Local verification:
 
 ---
 
+### 3. macOS FFmpeg 7.x ABI/struct-layout Issues — Resolved (2026-02-02)
+
+**What was happening:** GitHub Actions macOS runners (FFmpeg 7.x / avcodec 62.x / avformat 62.x) exposed places where ffgo relied on hardcoded struct offsets for fields that can shift across FFmpeg versions. This caused:
+- AAC encoder setup failures (`Invalid audio sample format: -1`) when `AVCodecContext.sample_fmt` did not get set.
+- Hardware decode crashes on macOS (`SIGABRT`/`SIGTRAP`) when setting `AVCodecContext.hw_device_ctx` / `hw_frames_ctx` via incorrect offsets.
+- Functional test failures where duration, chapters, and programs appeared as zero because `AVFormatContext` offsets differed.
+
+**Fix in ffgo:** added shim-backed field helpers for:
+- `AVCodecContext.sample_fmt`, `hw_device_ctx`, `hw_frames_ctx`
+- `AVFormatContext.duration`, programs, chapters (+ `AVProgram`/`AVChapter` accessors)
+
+and updated Go accessors to prefer shim helpers on platforms where struct offsets are unreliable (notably macOS).
+
+**Result:** CI (including macOS Intel + macOS ARM64) is green again.
+
 ## Completed
 
 - [x] Replace LICENSE throughout history with Apache 2.0
