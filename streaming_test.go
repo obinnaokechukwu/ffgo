@@ -8,6 +8,10 @@ import (
 )
 
 func TestNewStreamingEncoder_URLMappingAndLazyIO(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
 	enc, err := NewStreamingEncoder(
 		"rtmp://example.com/live/stream",
 		WithVideoEncoder(&VideoEncoderConfig{
