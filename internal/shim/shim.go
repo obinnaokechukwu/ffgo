@@ -82,6 +82,7 @@ var (
 	shimCodecCtxSetTimeBase  func(ctx uintptr, num, den int32)
 	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
 	shimCodecCtxSetFramerate func(ctx uintptr, num, den int32)
+	shimCodecCtxSetChLayout  func(ctx uintptr, nbChannels int32)
 )
 
 // Load attempts to load the ffshim library.
@@ -269,6 +270,7 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimCodecCtxSetTimeBase, libShim, "ffshim_codecctx_set_time_base")
 	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
 	registerOptionalLibFunc(&shimCodecCtxSetFramerate, libShim, "ffshim_codecctx_set_framerate")
+	registerOptionalLibFunc(&shimCodecCtxSetChLayout, libShim, "ffshim_codecctx_set_ch_layout_default")
 }
 
 func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
@@ -516,6 +518,17 @@ func CodecCtxSetTimeBase(ctx unsafe.Pointer, num, den int32) error {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetTimeBase(uintptr(ctx), num, den)
+	return nil
+}
+
+func CodecCtxSetChLayoutDefault(ctx unsafe.Pointer, nbChannels int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetChLayout == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetChLayout(uintptr(ctx), nbChannels)
 	return nil
 }
 

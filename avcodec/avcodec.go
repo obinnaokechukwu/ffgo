@@ -798,6 +798,12 @@ func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 		return
 	}
 
+	// Best-effort: if the shim is available, use it to set AVCodecContext->ch_layout
+	// via FFmpeg APIs (avoids all struct offset issues on FFmpeg 7+).
+	if err := ffshim.CodecCtxSetChLayoutDefault(ctx, nbChannels); err == nil {
+		return
+	}
+
 	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
 	// FFmpeg 7+ (libavcodec 62) is stricter about channel layouts for some encoders (e.g. AAC).
 	_ = avutil.OptSetInt(ctx, "ac", int64(nbChannels), 0)
