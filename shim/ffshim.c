@@ -330,3 +330,114 @@ int ffshim_avframe_color_offsets(
     *out_color_trc = (int)offsetof(AVFrame, color_trc);
     return 0;
 }
+
+/* ============================================================================
+ * CODEC FIELD HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+int ffshim_codecpar_width(void *par) {
+    if (par == NULL) {
+        return 0;
+    }
+    return ((AVCodecParameters*)par)->width;
+}
+
+int ffshim_codecpar_height(void *par) {
+    if (par == NULL) {
+        return 0;
+    }
+    return ((AVCodecParameters*)par)->height;
+}
+
+int ffshim_codecpar_format(void *par) {
+    if (par == NULL) {
+        return -1;
+    }
+    return ((AVCodecParameters*)par)->format;
+}
+
+int ffshim_codecpar_sample_rate(void *par) {
+    if (par == NULL) {
+        return 0;
+    }
+    return ((AVCodecParameters*)par)->sample_rate;
+}
+
+int ffshim_codecpar_channels(void *par) {
+    if (par == NULL) {
+        return 0;
+    }
+    return ((AVCodecParameters*)par)->ch_layout.nb_channels;
+}
+
+int ffshim_codecctx_width(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVCodecContext*)ctx)->width;
+}
+
+void ffshim_codecctx_set_width(void *ctx, int width) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->width = width;
+}
+
+int ffshim_codecctx_height(void *ctx) {
+    if (ctx == NULL) {
+        return 0;
+    }
+    return ((AVCodecContext*)ctx)->height;
+}
+
+void ffshim_codecctx_set_height(void *ctx, int height) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->height = height;
+}
+
+int ffshim_codecctx_pix_fmt(void *ctx) {
+    if (ctx == NULL) {
+        return -1;
+    }
+    return ((AVCodecContext*)ctx)->pix_fmt;
+}
+
+void ffshim_codecctx_set_pix_fmt(void *ctx, int pix_fmt) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->pix_fmt = pix_fmt;
+}
+
+void ffshim_codecctx_time_base(void *ctx, int *out_num, int *out_den) {
+    if (ctx == NULL || out_num == NULL || out_den == NULL) {
+        return;
+    }
+    *out_num = ((AVCodecContext*)ctx)->time_base.num;
+    *out_den = ((AVCodecContext*)ctx)->time_base.den;
+}
+
+void ffshim_codecctx_set_time_base(void *ctx, int num, int den) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->time_base = (AVRational){num, den};
+}
+
+void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den) {
+    if (ctx == NULL || out_num == NULL || out_den == NULL) {
+        return;
+    }
+    *out_num = ((AVCodecContext*)ctx)->framerate.num;
+    *out_den = ((AVCodecContext*)ctx)->framerate.den;
+}
+
+void ffshim_codecctx_set_framerate(void *ctx, int num, int den) {
+    if (ctx == NULL) {
+        return;
+    }
+    ((AVCodecContext*)ctx)->framerate = (AVRational){num, den};
+}

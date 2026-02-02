@@ -11,6 +11,7 @@ import (
 	"github.com/ebitengine/purego"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	ffshim "github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // Codec is an opaque FFmpeg AVCodec pointer.
@@ -523,12 +524,18 @@ func GetCtxWidth(ctx Context) int32 {
 	if ctx == nil {
 		return 0
 	}
+	if v, err := ffshim.CodecCtxWidth(ctx); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth))
 }
 
 // SetCtxWidth sets the width in codec context.
 func SetCtxWidth(ctx Context, width int32) {
 	if ctx == nil {
+		return
+	}
+	if err := ffshim.CodecCtxSetWidth(ctx, width); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth)) = width
@@ -539,12 +546,18 @@ func GetCtxHeight(ctx Context) int32 {
 	if ctx == nil {
 		return 0
 	}
+	if v, err := ffshim.CodecCtxHeight(ctx); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight))
 }
 
 // SetCtxHeight sets the height in codec context.
 func SetCtxHeight(ctx Context, height int32) {
 	if ctx == nil {
+		return
+	}
+	if err := ffshim.CodecCtxSetHeight(ctx, height); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight)) = height
@@ -555,6 +568,9 @@ func GetCtxPixFmt(ctx Context) int32 {
 	if ctx == nil {
 		return -1
 	}
+	if v, err := ffshim.CodecCtxPixFmt(ctx); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt))
 }
 
@@ -563,12 +579,18 @@ func SetCtxPixFmt(ctx Context, fmt int32) {
 	if ctx == nil {
 		return
 	}
+	if err := ffshim.CodecCtxSetPixFmt(ctx, fmt); err == nil {
+		return
+	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt)) = fmt
 }
 
 // SetCtxTimeBase sets the time base in codec context.
 func SetCtxTimeBase(ctx Context, num, den int32) {
 	if ctx == nil {
+		return
+	}
+	if err := ffshim.CodecCtxSetTimeBase(ctx, num, den); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase)) = num
@@ -618,6 +640,9 @@ func SetCtxFlags(ctx Context, flags int32) {
 // SetCtxFramerate sets the framerate in codec context.
 func SetCtxFramerate(ctx Context, num, den int32) {
 	if ctx == nil {
+		return
+	}
+	if err := ffshim.CodecCtxSetFramerate(ctx, num, den); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate)) = num
@@ -751,6 +776,9 @@ func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 func GetCtxTimeBase(ctx Context) avutil.Rational {
 	if ctx == nil {
 		return avutil.Rational{}
+	}
+	if num, den, err := ffshim.CodecCtxTimeBase(ctx); err == nil {
+		return avutil.NewRational(num, den)
 	}
 	num := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase))
 	den := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4))

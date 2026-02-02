@@ -63,6 +63,25 @@ var (
 
 	// AVFrame offset discovery helpers
 	shimAVFrameColorOffsets func(outRange, outSpace, outPrimaries, outTransfer *int32) int32
+
+	// AVCodecParameters field helpers (optional)
+	shimCodecParWidth      func(par uintptr) int32
+	shimCodecParHeight     func(par uintptr) int32
+	shimCodecParFormat     func(par uintptr) int32
+	shimCodecParSampleRate func(par uintptr) int32
+	shimCodecParChannels   func(par uintptr) int32
+
+	// AVCodecContext field helpers (optional)
+	shimCodecCtxWidth        func(ctx uintptr) int32
+	shimCodecCtxSetWidth     func(ctx uintptr, width int32)
+	shimCodecCtxHeight       func(ctx uintptr) int32
+	shimCodecCtxSetHeight    func(ctx uintptr, height int32)
+	shimCodecCtxPixFmt       func(ctx uintptr) int32
+	shimCodecCtxSetPixFmt    func(ctx uintptr, pixFmt int32)
+	shimCodecCtxTimeBase     func(ctx uintptr, outNum, outDen *int32)
+	shimCodecCtxSetTimeBase  func(ctx uintptr, num, den int32)
+	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
+	shimCodecCtxSetFramerate func(ctx uintptr, num, den int32)
 )
 
 // Load attempts to load the ffshim library.
@@ -231,6 +250,25 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimAVDeviceListInputSources, libShim, "ffshim_avdevice_list_input_sources")
 	registerOptionalLibFunc(&shimAVDeviceFreeStringArray, libShim, "ffshim_avdevice_free_string_array")
 	registerOptionalLibFunc(&shimAVFrameColorOffsets, libShim, "ffshim_avframe_color_offsets")
+
+	// AVCodecParameters field helpers (optional)
+	registerOptionalLibFunc(&shimCodecParWidth, libShim, "ffshim_codecpar_width")
+	registerOptionalLibFunc(&shimCodecParHeight, libShim, "ffshim_codecpar_height")
+	registerOptionalLibFunc(&shimCodecParFormat, libShim, "ffshim_codecpar_format")
+	registerOptionalLibFunc(&shimCodecParSampleRate, libShim, "ffshim_codecpar_sample_rate")
+	registerOptionalLibFunc(&shimCodecParChannels, libShim, "ffshim_codecpar_channels")
+
+	// AVCodecContext field helpers (optional)
+	registerOptionalLibFunc(&shimCodecCtxWidth, libShim, "ffshim_codecctx_width")
+	registerOptionalLibFunc(&shimCodecCtxSetWidth, libShim, "ffshim_codecctx_set_width")
+	registerOptionalLibFunc(&shimCodecCtxHeight, libShim, "ffshim_codecctx_height")
+	registerOptionalLibFunc(&shimCodecCtxSetHeight, libShim, "ffshim_codecctx_set_height")
+	registerOptionalLibFunc(&shimCodecCtxPixFmt, libShim, "ffshim_codecctx_pix_fmt")
+	registerOptionalLibFunc(&shimCodecCtxSetPixFmt, libShim, "ffshim_codecctx_set_pix_fmt")
+	registerOptionalLibFunc(&shimCodecCtxTimeBase, libShim, "ffshim_codecctx_time_base")
+	registerOptionalLibFunc(&shimCodecCtxSetTimeBase, libShim, "ffshim_codecctx_set_time_base")
+	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
+	registerOptionalLibFunc(&shimCodecCtxSetFramerate, libShim, "ffshim_codecctx_set_framerate")
 }
 
 func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
@@ -296,9 +334,9 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 // AVDeviceListInputSources lists available input devices for a given avdevice input format.
 //
 // Returns:
-// - count: number of devices
-// - names/descs: pointers to shim-allocated string arrays (char**). Caller MUST free both arrays
-//   using AVDeviceFreeStringArray.
+//   - count: number of devices
+//   - names/descs: pointers to shim-allocated string arrays (char**). Caller MUST free both arrays
+//     using AVDeviceFreeStringArray.
 //
 // This requires a shim build that links against libavdevice (built with -DFFSHIM_HAVE_AVDEVICE=1).
 func AVDeviceListInputSources(formatName, deviceName string, avdictOpts unsafe.Pointer) (count int, names, descs unsafe.Pointer, err error) {
@@ -344,6 +382,163 @@ func AVFrameColorOffsets() (rangeOff, spaceOff, primariesOff, transferOff int32,
 		return 0, 0, 0, 0, errors.New("ffgo: ffshim_avframe_color_offsets failed")
 	}
 	return r, s, p, t, nil
+}
+
+func CodecParWidth(par unsafe.Pointer) (int32, error) {
+	if par == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecParWidth == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecParWidth(uintptr(par)), nil
+}
+
+func CodecParHeight(par unsafe.Pointer) (int32, error) {
+	if par == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecParHeight == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecParHeight(uintptr(par)), nil
+}
+
+func CodecParFormat(par unsafe.Pointer) (int32, error) {
+	if par == nil {
+		return -1, nil
+	}
+	if !loaded || shimCodecParFormat == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecParFormat(uintptr(par)), nil
+}
+
+func CodecParSampleRate(par unsafe.Pointer) (int32, error) {
+	if par == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecParSampleRate == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecParSampleRate(uintptr(par)), nil
+}
+
+func CodecParChannels(par unsafe.Pointer) (int32, error) {
+	if par == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecParChannels == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecParChannels(uintptr(par)), nil
+}
+
+func CodecCtxWidth(ctx unsafe.Pointer) (int32, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecCtxWidth == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecCtxWidth(uintptr(ctx)), nil
+}
+
+func CodecCtxSetWidth(ctx unsafe.Pointer, width int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetWidth == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetWidth(uintptr(ctx), width)
+	return nil
+}
+
+func CodecCtxHeight(ctx unsafe.Pointer) (int32, error) {
+	if ctx == nil {
+		return 0, nil
+	}
+	if !loaded || shimCodecCtxHeight == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecCtxHeight(uintptr(ctx)), nil
+}
+
+func CodecCtxSetHeight(ctx unsafe.Pointer, height int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetHeight == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetHeight(uintptr(ctx), height)
+	return nil
+}
+
+func CodecCtxPixFmt(ctx unsafe.Pointer) (int32, error) {
+	if ctx == nil {
+		return -1, nil
+	}
+	if !loaded || shimCodecCtxPixFmt == nil {
+		return 0, ErrShimNotLoaded
+	}
+	return shimCodecCtxPixFmt(uintptr(ctx)), nil
+}
+
+func CodecCtxSetPixFmt(ctx unsafe.Pointer, pixFmt int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetPixFmt == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetPixFmt(uintptr(ctx), pixFmt)
+	return nil
+}
+
+func CodecCtxTimeBase(ctx unsafe.Pointer) (num, den int32, err error) {
+	if ctx == nil {
+		return 0, 0, nil
+	}
+	if !loaded || shimCodecCtxTimeBase == nil {
+		return 0, 0, ErrShimNotLoaded
+	}
+	shimCodecCtxTimeBase(uintptr(ctx), &num, &den)
+	return num, den, nil
+}
+
+func CodecCtxSetTimeBase(ctx unsafe.Pointer, num, den int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetTimeBase == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetTimeBase(uintptr(ctx), num, den)
+	return nil
+}
+
+func CodecCtxFramerate(ctx unsafe.Pointer) (num, den int32, err error) {
+	if ctx == nil {
+		return 0, 0, nil
+	}
+	if !loaded || shimCodecCtxFramerate == nil {
+		return 0, 0, ErrShimNotLoaded
+	}
+	shimCodecCtxFramerate(uintptr(ctx), &num, &den)
+	return num, den, nil
+}
+
+func CodecCtxSetFramerate(ctx unsafe.Pointer, num, den int32) error {
+	if ctx == nil {
+		return nil
+	}
+	if !loaded || shimCodecCtxSetFramerate == nil {
+		return ErrShimNotLoaded
+	}
+	shimCodecCtxSetFramerate(uintptr(ctx), num, den)
+	return nil
 }
 
 // findShimLibrary looks for the shim library in standard locations.

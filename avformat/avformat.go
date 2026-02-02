@@ -12,6 +12,7 @@ import (
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	ffshim "github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // FormatContext is an opaque FFmpeg AVFormatContext pointer.
@@ -704,6 +705,9 @@ func GetCodecParWidth(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
 	}
+	if v, err := ffshim.CodecParWidth(par); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParWidth))
 }
 
@@ -711,6 +715,9 @@ func GetCodecParWidth(par avcodec.Parameters) int32 {
 func GetCodecParHeight(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
+	}
+	if v, err := ffshim.CodecParHeight(par); err == nil {
+		return v
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParHeight))
 }
@@ -720,6 +727,9 @@ func GetCodecParFormat(par avcodec.Parameters) int32 {
 	if par == nil {
 		return -1
 	}
+	if v, err := ffshim.CodecParFormat(par); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParFormat))
 }
 
@@ -728,6 +738,9 @@ func GetCodecParSampleRate(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
 	}
+	if v, err := ffshim.CodecParSampleRate(par); err == nil {
+		return v
+	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParSampleRate))
 }
 
@@ -735,6 +748,9 @@ func GetCodecParSampleRate(par avcodec.Parameters) int32 {
 func GetCodecParChannels(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
+	}
+	if v, err := ffshim.CodecParChannels(par); err == nil {
+		return v
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChannels))
 }

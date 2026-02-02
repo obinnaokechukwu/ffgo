@@ -115,6 +115,29 @@ int ffshim_avframe_color_offsets(
     int *out_color_trc
 );
 
+/* ============================================================================
+ * CODEC FIELD HELPERS (OPTIONAL)
+ * ============================================================================ */
+
+/* AVCodecParameters field accessors */
+int ffshim_codecpar_width(void *par);
+int ffshim_codecpar_height(void *par);
+int ffshim_codecpar_format(void *par);
+int ffshim_codecpar_sample_rate(void *par);
+int ffshim_codecpar_channels(void *par);
+
+/* AVCodecContext field accessors */
+int ffshim_codecctx_width(void *ctx);
+void ffshim_codecctx_set_width(void *ctx, int width);
+int ffshim_codecctx_height(void *ctx);
+void ffshim_codecctx_set_height(void *ctx, int height);
+int ffshim_codecctx_pix_fmt(void *ctx);
+void ffshim_codecctx_set_pix_fmt(void *ctx, int pix_fmt);
+void ffshim_codecctx_time_base(void *ctx, int *out_num, int *out_den);
+void ffshim_codecctx_set_time_base(void *ctx, int num, int den);
+void ffshim_codecctx_framerate(void *ctx, int *out_num, int *out_den);
+void ffshim_codecctx_set_framerate(void *ctx, int num, int den);
+
 #ifdef __cplusplus
 }
 #endif
