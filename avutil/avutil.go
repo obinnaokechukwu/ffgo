@@ -27,44 +27,45 @@ type HWDeviceContext = unsafe.Pointer
 // HWFramesContext is an opaque FFmpeg AVBufferRef for hardware frames context.
 type HWFramesContext = unsafe.Pointer
 
-	// Function bindings - registered when init() is called
-	var (
-		avFrameAlloc        func() uintptr
-		avFrameFree         func(frame *unsafe.Pointer)
-		avFrameRef          func(dst, src uintptr) int32
-		avFrameUnref        func(frame uintptr)
-		avFrameGetBuffer    func(frame uintptr, align int32) int32
-		avFrameMakeWritable func(frame uintptr) int32
+// Function bindings - registered when init() is called
+var (
+	avFrameAlloc        func() uintptr
+	avFrameFree         func(frame *unsafe.Pointer)
+	avFrameRef          func(dst, src uintptr) int32
+	avFrameUnref        func(frame uintptr)
+	avFrameGetBuffer    func(frame uintptr, align int32) int32
+	avFrameMakeWritable func(frame uintptr) int32
 
-		avMalloc func(size uintptr) uintptr
-		avFree   func(ptr uintptr)
-		avFreep  func(ptr *unsafe.Pointer)
+	avMalloc func(size uintptr) uintptr
+	avFree   func(ptr uintptr)
+	avFreep  func(ptr *unsafe.Pointer)
 
-		avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
-		avDictGet  func(m uintptr, key string, prev uintptr, flags int32) uintptr
-		avDictFree func(pm *unsafe.Pointer)
+	avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
+	avDictGet  func(m uintptr, key string, prev uintptr, flags int32) uintptr
+	avDictFree func(pm *unsafe.Pointer)
 
-		avStrerror func(errnum int32, errbuf *byte, errbufSize uintptr) int32
+	avStrerror func(errnum int32, errbuf *byte, errbufSize uintptr) int32
 
-		// Channel layout functions (FFmpeg 5.1+)
-		avChannelLayoutDefault func(chLayout uintptr, nbChannels int32)
-		avChannelLayoutCopy    func(dst, src uintptr) int32
+	// Channel layout functions (FFmpeg 5.1+)
+	avChannelLayoutDefault  func(chLayout uintptr, nbChannels int32)
+	avChannelLayoutCopy     func(dst, src uintptr) int32
+	avChannelLayoutFromMask func(chLayout uintptr, mask uint64) int32
 
-		// AVOptions API (for setting codec options like preset, profile, etc.)
-		avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
-		avOptSetInt    func(obj uintptr, name string, val int64, searchFlags int32) int32
-		avOptSetDouble func(obj uintptr, name string, val float64, searchFlags int32) int32
+	// AVOptions API (for setting codec options like preset, profile, etc.)
+	avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
+	avOptSetInt    func(obj uintptr, name string, val int64, searchFlags int32) int32
+	avOptSetDouble func(obj uintptr, name string, val float64, searchFlags int32) int32
 
-		// Hardware context functions
-		avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
-		avHWDeviceFindTypeByName func(name string) int32
-		avHWDeviceGetTypeName    func(deviceType int32) uintptr
-		avHWFrameTransferData    func(dst, src uintptr, flags int32) int32
+	// Hardware context functions
+	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
+	avHWDeviceFindTypeByName func(name string) int32
+	avHWDeviceGetTypeName    func(deviceType int32) uintptr
+	avHWFrameTransferData    func(dst, src uintptr, flags int32) int32
 
-		// Buffer reference functions
-		avBufferCreate func(data uintptr, size int32, freeCb uintptr, opaque uintptr, flags int32) uintptr
-		avBufferRef    func(buf uintptr) uintptr
-		avBufferUnref  func(buf *unsafe.Pointer)
+	// Buffer reference functions
+	avBufferCreate func(data uintptr, size int32, freeCb uintptr, opaque uintptr, flags int32) uintptr
+	avBufferRef    func(buf uintptr) uintptr
+	avBufferUnref  func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
 	// We need to calculate offsets based on FFmpeg version
@@ -110,6 +111,7 @@ func registerBindings() {
 	// Channel layout functions (FFmpeg 5.1+)
 	purego.RegisterLibFunc(&avChannelLayoutDefault, lib, "av_channel_layout_default")
 	purego.RegisterLibFunc(&avChannelLayoutCopy, lib, "av_channel_layout_copy")
+	registerOptionalLibFunc(&avChannelLayoutFromMask, lib, "av_channel_layout_from_mask")
 
 	// AVOptions API
 	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
@@ -128,6 +130,11 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avBufferUnref, lib, "av_buffer_unref")
 
 	bindingsRegistered = true
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() { _ = recover() }()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // FrameAlloc allocates an AVFrame and returns a pointer to it.
@@ -473,6 +480,22 @@ func ChannelLayoutDefault(chLayout unsafe.Pointer, nbChannels int32) {
 		return
 	}
 	avChannelLayoutDefault(uintptr(chLayout), nbChannels)
+}
+
+// ChannelLayoutFromMask sets a channel layout from a legacy uint64 channel mask.
+// This is supported on FFmpeg 5.1+.
+func ChannelLayoutFromMask(chLayout unsafe.Pointer, mask uint64) error {
+	if chLayout == nil {
+		return nil
+	}
+	if avChannelLayoutFromMask == nil {
+		return bindings.ErrNotLoaded
+	}
+	ret := avChannelLayoutFromMask(uintptr(chLayout), mask)
+	if ret < 0 {
+		return NewError(ret, "av_channel_layout_from_mask")
+	}
+	return nil
 }
 
 // ChannelLayoutCopy copies a channel layout from src to dst.
