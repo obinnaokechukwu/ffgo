@@ -188,6 +188,12 @@ file, _ := os.Open("video.mp4")
 decoder, err := ffgo.NewDecoderFromReader(file, "mp4")
 ```
 
+For live or channel-backed input, the read callback is used while the decoder
+constructor probes the stream, so feed valid media bytes concurrently and do not
+return `0, nil` for "no data yet". RTP payloads usually need codec-specific
+depacketization before they can be passed to ffgo as a raw elementary stream
+such as `"h264"` or `"hevc"`.
+
 ### Scaling and pixel format conversion
 
 ```go

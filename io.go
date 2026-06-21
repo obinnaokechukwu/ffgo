@@ -21,6 +21,12 @@ type IOCallbacks struct {
 	// Read reads up to len(buf) bytes into buf.
 	// Returns the number of bytes read and any error encountered.
 	// At end of file, returns 0, io.EOF.
+	//
+	// The callback may be invoked synchronously by decoder constructors while
+	// FFmpeg probes the input. For live/channel-backed sources, block until
+	// demuxable bytes are available or return io.EOF when the source is closed.
+	// Do not return 0, nil to mean "no data yet"; that gives FFmpeg no forward
+	// progress during probing.
 	Read func(buf []byte) (int, error)
 
 	// Write writes len(buf) bytes from buf.
@@ -261,6 +267,13 @@ func (c *CustomIOContext) AVIOContext() avformat.IOContext {
 
 // NewDecoderFromIO creates a decoder with custom I/O.
 // format is the format hint (e.g., "mp4", "mkv", "avi") - can be empty for auto-detection.
+//
+// This constructor opens the input and reads stream information before it
+// returns, so Read can be called immediately and repeatedly. A live source must
+// feed a continuous demuxable byte stream concurrently with construction. Raw
+// RTP payloads are not a demuxable byte stream by themselves; depacketize them
+// first (for example into Annex B H.264/H.265 access units) and pass the
+// corresponding format hint such as "h264" or "hevc".
 func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 	return NewDecoderFromIOWithOptions(callbacks, &DecoderOptions{Format: format})
 }
@@ -269,6 +282,9 @@ func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 //
 // It supports passing typed probing controls (probesize/analyzeduration/etc) and a format hint.
 // The returned decoder owns the CustomIOContext and will close it on Decoder.Close().
+// Like NewDecoderFromIO, this call performs FFmpeg probing synchronously and
+// therefore needs enough valid input bytes to identify the stream before it can
+// return a Decoder.
 func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
 	// Create custom I/O context
 	ioCtx, err := NewCustomIOContext(callbacks, false)

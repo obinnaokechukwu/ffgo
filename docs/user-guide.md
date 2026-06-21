@@ -1362,6 +1362,53 @@ decoder, err := ffgo.NewDecoderFromIO(&ffgo.IOCallbacks{
 }, "mp4")
 ```
 
+`NewDecoderFromIO` opens the input and calls `avformat_find_stream_info`
+before it returns. That means `Read` can be called immediately during
+construction and may be called many times while FFmpeg probes the input. For
+channel-backed or live sources, start decoder construction in a goroutine or
+make sure another goroutine is already feeding the channel.
+
+The `Read` callback must return real media bytes, or `0, io.EOF` when the
+source is closed. Do not return `0, nil` to mean "no data yet"; block until data
+is available instead.
+
+```go
+chunks := make(chan []byte, 32)
+
+go func() {
+    var pending []byte
+
+    decoder, err := ffgo.NewDecoderFromIO(&ffgo.IOCallbacks{
+        Read: func(buf []byte) (int, error) {
+            for len(pending) == 0 {
+                chunk, ok := <-chunks
+                if !ok {
+                    return 0, io.EOF
+                }
+                pending = chunk
+            }
+
+            n := copy(buf, pending)
+            pending = pending[n:]
+            return n, nil
+        },
+    }, "h264")
+    if err != nil {
+        // handle error
+        return
+    }
+    defer decoder.Close()
+
+    // read frames from decoder
+}()
+```
+
+When the source is RTP, do not feed RTP payload bytes directly unless the codec
+payload is already a valid elementary stream for the selected demuxer. Most RTP
+video payloads need depacketization first. For example, H.264 RTP packets must
+be reconstructed into complete NAL units/access units and written as an Annex B
+byte stream before using the `"h264"` format hint.
+
 ---
 
 ## Error Handling
