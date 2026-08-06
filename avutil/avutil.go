@@ -89,6 +89,7 @@ func registerBindings() {
 	if lib == 0 {
 		return
 	}
+	setFrameOffsets()
 
 	purego.RegisterLibFunc(&avFrameAlloc, lib, "av_frame_alloc")
 	purego.RegisterLibFunc(&avFrameFree, lib, "av_frame_free")
@@ -204,32 +205,35 @@ const NoPTSValue int64 = -9223372036854775808 // 0x8000000000000000
 // AV_NOPTS_VALUE is an alias for NoPTSValue (matches FFmpeg naming).
 const AV_NOPTS_VALUE = NoPTSValue
 
-// AVFrame struct field offsets (for FFmpeg 6.x / avutil 58.x)
-// These are used to read/write frame properties without accessing struct fields directly
-// Verified with offsetof() on FFmpeg 58.29.100
-const (
-	// Data pointer array offset
-	offsetData = 0 // uint8_t *data[8] at offset 0
-
-	// Linesize array offset
-	offsetLinesize = 64 // int linesize[8] at offset 64
-
-	// Video frame fields
-	offsetWidth     = 104 // int width at offset 104
-	offsetHeight    = 108 // int height at offset 108
-	offsetNbSamples = 112 // int nb_samples at offset 112
-	offsetFormat    = 116 // int format at offset 116
-
-	// Key frame flag
-	offsetKeyFrame = 120 // int key_frame at offset 120
-
-	// Timing fields
-	offsetPts = 136 // int64 pts at offset 136
-
-	// Audio fields
-	offsetSampleRate = 208 // int sample_rate at offset 208 (FFmpeg 6.x)
-	offsetChLayout   = 448 // AVChannelLayout ch_layout at offset 448 (FFmpeg 6.x)
+// AVFrame field offsets are selected from the runtime FFmpeg ABI. They cannot
+// be constants because FFmpeg 7 removed deprecated fields and shifted the
+// audio and buffer sections of AVFrame.
+var (
+	offsetData, offsetLinesize, offsetExtendedData uintptr
+	offsetWidth, offsetHeight, offsetNbSamples     uintptr
+	offsetFormat, offsetKeyFrame, offsetPts        uintptr
+	offsetSampleRate, offsetBuffer                 uintptr
+	offsetExtendedBuffer, offsetNbExtendedBuffer   uintptr
+	offsetChLayout                                 uintptr
 )
+
+func setFrameOffsets() {
+	layout := bindings.ABI().Frame
+	offsetData = layout.Data
+	offsetLinesize = layout.Linesize
+	offsetExtendedData = layout.ExtendedData
+	offsetWidth = layout.Width
+	offsetHeight = layout.Height
+	offsetNbSamples = layout.NbSamples
+	offsetFormat = layout.Format
+	offsetKeyFrame = layout.KeyFrame
+	offsetPts = layout.PTS
+	offsetSampleRate = layout.SampleRate
+	offsetBuffer = layout.Buffer
+	offsetExtendedBuffer = layout.ExtendedBuffer
+	offsetNbExtendedBuffer = layout.NbExtendedBuffer
+	offsetChLayout = layout.ChannelLayout
+}
 
 // GetFrameWidth returns the width of the frame.
 func GetFrameWidth(frame Frame) int32 {
@@ -409,6 +413,39 @@ func GetFrameLinesize(frame Frame) [8]int32 {
 	}
 	linesizeArray := (*[8]int32)(unsafe.Pointer(uintptr(frame) + offsetLinesize))
 	return *linesizeArray
+}
+
+// ConfigureFrameBuffer installs a single AVBufferRef and resets the AVFrame
+// data-plane bookkeeping. It is used when Go-owned memory is wrapped in an
+// FFmpeg frame.
+func ConfigureFrameBuffer(frame Frame, buffer AVBufferRef) {
+	if frame == nil {
+		return
+	}
+	base := uintptr(frame)
+	data := (*[8]unsafe.Pointer)(unsafe.Pointer(base + offsetData))
+	linesize := (*[8]int32)(unsafe.Pointer(base + offsetLinesize))
+	buffers := (*[8]unsafe.Pointer)(unsafe.Pointer(base + offsetBuffer))
+	for i := 0; i < 8; i++ {
+		data[i] = nil
+		linesize[i] = 0
+		buffers[i] = nil
+	}
+	*(*unsafe.Pointer)(unsafe.Pointer(base + offsetExtendedData)) = unsafe.Pointer(base + offsetData)
+	buffers[0] = buffer
+	*(*unsafe.Pointer)(unsafe.Pointer(base + offsetExtendedBuffer)) = nil
+	*(*int32)(unsafe.Pointer(base + offsetNbExtendedBuffer)) = 0
+}
+
+// SetFrameDataPlane sets a frame data pointer and its linesize.
+func SetFrameDataPlane(frame Frame, plane int, data unsafe.Pointer, linesize int32) {
+	if frame == nil || plane < 0 || plane >= 8 {
+		return
+	}
+	dataArray := (*[8]unsafe.Pointer)(unsafe.Pointer(uintptr(frame) + offsetData))
+	linesizeArray := (*[8]int32)(unsafe.Pointer(uintptr(frame) + offsetLinesize))
+	dataArray[plane] = data
+	linesizeArray[plane] = linesize
 }
 
 // Malloc allocates memory using FFmpeg's allocator.

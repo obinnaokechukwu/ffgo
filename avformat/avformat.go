@@ -12,7 +12,6 @@ import (
 	"github.com/obinnaokechukwu/ffgo/avcodec"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	ffshim "github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // FormatContext is an opaque FFmpeg AVFormatContext pointer.
@@ -77,9 +76,6 @@ var (
 	avDictGet func(m uintptr, key string, prev uintptr, flags int32) uintptr
 	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
 
-	// Note: Chapter creation uses the shim (internal/shim.NewChapter) because avformat_new_chapter
-	// has a complex signature that doesn't work well with purego's dynamic binding.
-
 	bindingsRegistered bool
 )
 
@@ -100,6 +96,7 @@ func registerBindings() {
 	if lib == 0 {
 		return
 	}
+	setABIOffsets()
 
 	libCodec := bindings.LibAVCodec()
 
@@ -418,21 +415,14 @@ func PacketUnref(pkt avcodec.Packet) {
 	avPacketUnref(uintptr(pkt))
 }
 
-// AVFormatContext struct field offsets (for FFmpeg 6.x / avformat 60.x)
-// Verified with offsetof() on FFmpeg 60.16.100
-const (
-	offsetIOContext       = 32  // AVIOContext *pb
-	offsetInputFormat     = 8   // AVInputFormat *iformat
-	offsetNumStreams      = 44  // unsigned int nb_streams
-	offsetStreams         = 48  // AVStream **streams
-	offsetDuration        = 72  // int64_t duration
-	offsetBitRate         = 80  // int64_t bit_rate
-	offsetNbPrograms      = 132 // unsigned int nb_programs
-	offsetPrograms        = 136 // AVProgram **programs
-	offsetNbChapters      = 164 // unsigned int nb_chapters
-	offsetChapters        = 168 // AVChapter **chapters
-	offsetContextMetadata = 176 // AVDictionary *metadata
-	offsetProbeScore      = 300 // int probe_score
+// AVFormatContext field offsets are selected from the runtime FFmpeg ABI.
+var (
+	offsetIOContext, offsetInputFormat, offsetOformat uintptr
+	offsetNumStreams, offsetStreams                   uintptr
+	offsetDuration, offsetBitRate, offsetFlags        uintptr
+	offsetNbPrograms, offsetPrograms                  uintptr
+	offsetNbChapters, offsetChapters                  uintptr
+	offsetContextMetadata, offsetProbeScore           uintptr
 )
 
 // AVChapter struct field offsets (for FFmpeg 6.x)
@@ -463,10 +453,6 @@ func GetNumPrograms(ctx FormatContext) int {
 	if ctx == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.FormatCtxNbPrograms(ctx); err == nil {
-		return v
-	}
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbPrograms)))
 }
 
@@ -478,10 +464,6 @@ func GetProgram(ctx FormatContext, index int) Program {
 	n := GetNumPrograms(ctx)
 	if index >= n {
 		return nil
-	}
-	_ = ffshim.Load()
-	if p, err := ffshim.FormatCtxProgram(ctx, index); err == nil {
-		return p
 	}
 	programsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetPrograms))
 	if programsPtr == nil {
@@ -496,10 +478,6 @@ func GetProgramID(p Program) int {
 	if p == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ProgramID(p); err == nil {
-		return int(v)
-	}
 	return int(*(*int32)(unsafe.Pointer(uintptr(p) + offsetProgramID)))
 }
 
@@ -507,20 +485,6 @@ func GetProgramID(p Program) int {
 func GetProgramStreamIndexes(p Program) []int {
 	if p == nil {
 		return nil
-	}
-	_ = ffshim.Load()
-	if nb, err := ffshim.ProgramNbStreamIndexes(p); err == nil {
-		if nb <= 0 {
-			return nil
-		}
-		if ptr, err := ffshim.ProgramStreamIndexPtr(p); err == nil && ptr != nil {
-			raw := unsafe.Slice((*int32)(ptr), nb)
-			out := make([]int, 0, nb)
-			for _, v := range raw {
-				out = append(out, int(v))
-			}
-			return out
-		}
 	}
 	nb := int(*(*uint32)(unsafe.Pointer(uintptr(p) + offsetProgramNbStreamIndex)))
 	if nb <= 0 {
@@ -543,10 +507,6 @@ func GetProgramStreamIndexes(p Program) []int {
 func GetProgramMetadata(p Program) avutil.Dictionary {
 	if p == nil {
 		return nil
-	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ProgramMetadata(p); err == nil {
-		return avutil.Dictionary(v)
 	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(p) + offsetProgramMetadata))
 }
@@ -646,10 +606,6 @@ func GetDuration(ctx FormatContext) int64 {
 	if ctx == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.FormatCtxDuration(ctx); err == nil {
-		return v
-	}
 	return *(*int64)(unsafe.Pointer(uintptr(ctx) + offsetDuration))
 }
 
@@ -657,10 +613,6 @@ func GetDuration(ctx FormatContext) int64 {
 func GetBitRate(ctx FormatContext) int64 {
 	if ctx == nil {
 		return 0
-	}
-	_ = ffshim.Load()
-	if v, err := ffshim.FormatCtxBitRate(ctx); err == nil {
-		return v
 	}
 	return *(*int64)(unsafe.Pointer(uintptr(ctx) + offsetBitRate))
 }
@@ -708,19 +660,43 @@ func GetStreamCodecPar(stream Stream) avcodec.Parameters {
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(stream) + offsetStreamCodecPar))
 }
 
-// AVCodecParameters struct field offsets (for FFmpeg 6.x/7.x)
-// Verified with offsetof() on FFmpeg 7.1.1
-const (
-	offsetCodecParType          = 0   // enum AVMediaType codec_type
-	offsetCodecParCodecID       = 4   // enum AVCodecID codec_id
-	offsetCodecParExtradata     = 16  // uint8_t *extradata
-	offsetCodecParExtradataSize = 24  // int extradata_size
-	offsetCodecParFormat        = 28  // int format (pixel format or sample format)
-	offsetCodecParWidth         = 56  // int width
-	offsetCodecParHeight        = 60  // int height
-	offsetCodecParSampleRate    = 116 // int sample_rate
-	offsetCodecParChannels      = 148 // ch_layout.nb_channels (int in AVChannelLayout at offset 136 + 12)
+// AVCodecParameters field offsets are selected from the runtime FFmpeg ABI.
+var (
+	offsetCodecParType, offsetCodecParCodecID                       uintptr
+	offsetCodecParExtradata, offsetCodecParExtradataSize            uintptr
+	offsetCodecParFormat, offsetCodecParWidth, offsetCodecParHeight uintptr
+	offsetCodecParSampleRate, offsetCodecParChLayout                uintptr
 )
+
+func setABIOffsets() {
+	layout := bindings.ABI()
+	format := layout.FormatContext
+	offsetIOContext = format.IOContext
+	offsetInputFormat = format.InputFormat
+	offsetOformat = format.OutputFormat
+	offsetNumStreams = format.NumStreams
+	offsetStreams = format.Streams
+	offsetDuration = format.Duration
+	offsetBitRate = format.BitRate
+	offsetFlags = format.Flags
+	offsetNbPrograms = format.NumPrograms
+	offsetPrograms = format.Programs
+	offsetNbChapters = format.NumChapters
+	offsetChapters = format.Chapters
+	offsetContextMetadata = format.Metadata
+	offsetProbeScore = format.ProbeScore
+
+	parameters := layout.CodecParameters
+	offsetCodecParType = parameters.CodecType
+	offsetCodecParCodecID = parameters.CodecID
+	offsetCodecParExtradata = parameters.Extradata
+	offsetCodecParExtradataSize = parameters.ExtradataSize
+	offsetCodecParFormat = parameters.Format
+	offsetCodecParWidth = parameters.Width
+	offsetCodecParHeight = parameters.Height
+	offsetCodecParSampleRate = parameters.SampleRate
+	offsetCodecParChLayout = parameters.ChannelLayout
+}
 
 // GetCodecParType returns the media type from codec parameters.
 func GetCodecParType(par avcodec.Parameters) avutil.MediaType {
@@ -743,9 +719,6 @@ func GetCodecParWidth(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
 	}
-	if v, err := ffshim.CodecParWidth(par); err == nil {
-		return v
-	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParWidth))
 }
 
@@ -753,9 +726,6 @@ func GetCodecParWidth(par avcodec.Parameters) int32 {
 func GetCodecParHeight(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
-	}
-	if v, err := ffshim.CodecParHeight(par); err == nil {
-		return v
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParHeight))
 }
@@ -765,9 +735,6 @@ func GetCodecParFormat(par avcodec.Parameters) int32 {
 	if par == nil {
 		return -1
 	}
-	if v, err := ffshim.CodecParFormat(par); err == nil {
-		return v
-	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParFormat))
 }
 
@@ -775,9 +742,6 @@ func GetCodecParFormat(par avcodec.Parameters) int32 {
 func GetCodecParSampleRate(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
-	}
-	if v, err := ffshim.CodecParSampleRate(par); err == nil {
-		return v
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParSampleRate))
 }
@@ -787,10 +751,7 @@ func GetCodecParChannels(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
 	}
-	if v, err := ffshim.CodecParChannels(par); err == nil {
-		return v
-	}
-	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChannels))
+	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChLayout + 4))
 }
 
 // GetCodecParExtradata returns the extradata bytes from codec parameters.
@@ -882,11 +843,6 @@ func GetStreamAvgFrameRate(stream Stream) (num, den int32) {
 	return
 }
 
-// AVFormatContext output field offsets (for FFmpeg 6.x)
-const (
-	offsetOformat = 16 // AVOutputFormat *oformat
-)
-
 // AVOutputFormat field offsets (for FFmpeg 6.x)
 const (
 	offsetOutputFormatFlags = 44 // int flags
@@ -914,9 +870,6 @@ const (
 	AVFMT_FLAG_SORT_DTS     = 0x10000 // Try to interleave output packets by dts
 	AVFMT_FLAG_FAST_SEEK    = 0x80000 // Enable fast seeking
 )
-
-// AVFormatContext flags field offset (for FFmpeg 6.x/7.x)
-const offsetFlags = 96
 
 // GetFlags returns the flags from a format context.
 func GetFlags(ctx FormatContext) int32 {
@@ -1099,10 +1052,6 @@ func GetNumChapters(ctx FormatContext) int {
 	if ctx == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.FormatCtxNbChapters(ctx); err == nil {
-		return v
-	}
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNbChapters)))
 }
 
@@ -1114,10 +1063,6 @@ func GetChapter(ctx FormatContext, index int) Chapter {
 	numChapters := GetNumChapters(ctx)
 	if index >= numChapters {
 		return nil
-	}
-	_ = ffshim.Load()
-	if ch, err := ffshim.FormatCtxChapter(ctx, index); err == nil {
-		return ch
 	}
 	chaptersPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetChapters))
 	if chaptersPtr == nil {
@@ -1132,10 +1077,6 @@ func GetChapterID(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ChapterID(ch); err == nil {
-		return v
-	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterID))
 }
 
@@ -1143,13 +1084,6 @@ func GetChapterID(ch Chapter) int64 {
 func GetChapterTimeBase(ch Chapter) (num, den int32) {
 	if ch == nil {
 		return 0, 1
-	}
-	_ = ffshim.Load()
-	if n, d, err := ffshim.ChapterTimeBase(ch); err == nil {
-		if d == 0 {
-			d = 1
-		}
-		return n, d
 	}
 	num = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase))
 	den = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase + 4))
@@ -1161,10 +1095,6 @@ func GetChapterStart(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ChapterStart(ch); err == nil {
-		return v
-	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterStart))
 }
 
@@ -1173,10 +1103,6 @@ func GetChapterEnd(ch Chapter) int64 {
 	if ch == nil {
 		return 0
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ChapterEnd(ch); err == nil {
-		return v
-	}
 	return *(*int64)(unsafe.Pointer(uintptr(ch) + offsetChapterEnd))
 }
 
@@ -1184,10 +1110,6 @@ func GetChapterEnd(ch Chapter) int64 {
 func GetChapterMetadata(ch Chapter) avutil.Dictionary {
 	if ch == nil {
 		return nil
-	}
-	_ = ffshim.Load()
-	if v, err := ffshim.ChapterMetadata(ch); err == nil {
-		return avutil.Dictionary(v)
 	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ch) + offsetChapterMetadata))
 }

@@ -89,6 +89,10 @@ func initLibrary() error {
 	if err != nil {
 		return fmt.Errorf("avfilter: failed to load library: %w", err)
 	}
+	purego.RegisterLibFunc(&avfilter_version, libAVFilter, "avfilter_version")
+	if err := bindings.ValidateLibraryVersion("avfilter", avfilter_version()); err != nil {
+		return err
+	}
 
 	// Bind core functions
 	purego.RegisterLibFunc(&avfilter_graph_alloc, libAVFilter, "avfilter_graph_alloc")
@@ -100,7 +104,6 @@ func initLibrary() error {
 	purego.RegisterLibFunc(&avfilter_link, libAVFilter, "avfilter_link")
 	purego.RegisterLibFunc(&avfilter_inout_alloc, libAVFilter, "avfilter_inout_alloc")
 	purego.RegisterLibFunc(&avfilter_inout_free, libAVFilter, "avfilter_inout_free")
-	purego.RegisterLibFunc(&avfilter_version, libAVFilter, "avfilter_version")
 
 	// Buffer source/sink functions (from libavfilter)
 	purego.RegisterLibFunc(&av_buffersrc_add_frame_flags, libAVFilter, "av_buffersrc_add_frame_flags")

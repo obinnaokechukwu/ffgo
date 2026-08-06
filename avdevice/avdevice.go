@@ -19,6 +19,7 @@ var (
 	initErr     error
 
 	avdevice_register_all func()
+	avdeviceVersion       func() uint32
 )
 
 // Init loads libavdevice and registers the minimal function bindings.
@@ -29,6 +30,11 @@ func Init() error {
 		libAVDevice, err = bindings.LoadLibrary("avdevice", []int{61, 60, 59, 58})
 		if err != nil {
 			initErr = fmt.Errorf("avdevice: failed to load library: %w", err)
+			return
+		}
+		purego.RegisterLibFunc(&avdeviceVersion, libAVDevice, "avdevice_version")
+		if err := bindings.ValidateLibraryVersion("avdevice", avdeviceVersion()); err != nil {
+			initErr = err
 			return
 		}
 
@@ -48,4 +54,3 @@ func RegisterAll() error {
 	}
 	return nil
 }
-

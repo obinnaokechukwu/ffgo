@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/ebitengine/purego"
+	"github.com/obinnaokechukwu/ffgo/internal/abi"
 	"github.com/obinnaokechukwu/ffgo/internal/platform"
 )
 
@@ -28,11 +29,11 @@ var (
 	libAVCodec  uintptr
 	libAVFormat uintptr
 	libSWScale  uintptr
-	libFFShim   uintptr
 
-	loaded   bool
-	loadOnce sync.Once
-	loadErr  error
+	loaded     bool
+	loadOnce   sync.Once
+	loadErr    error
+	currentABI abi.Layout
 )
 
 // Version function bindings
@@ -87,9 +88,6 @@ func doLoad() error {
 	// 4. Load swscale (depends on avutil) - optional
 	libSWScale, _ = loadLibrary("swscale", []int{8, 7, 6, 5})
 
-	// 5. Load shim (optional - for logging and AVRational on non-Darwin)
-	libFFShim, _ = loadLibrary("ffshim", []int{0})
-
 	// Register version functions
 	purego.RegisterLibFunc(&avutilVersion, libAVUtil, "avutil_version")
 	purego.RegisterLibFunc(&avcodecVersion, libAVCodec, "avcodec_version")
@@ -97,6 +95,15 @@ func doLoad() error {
 
 	if libSWScale != 0 {
 		purego.RegisterLibFunc(&swscaleVersion, libSWScale, "swscale_version")
+	}
+
+	currentABI, err = abi.Detect(avutilVersion(), avcodecVersion(), avformatVersion())
+	if err != nil {
+		return err
+	}
+	if swscaleVersion != nil && int(swscaleVersion()>>16) != currentABI.SWScaleMajor {
+		return fmt.Errorf("%w: libswscale %d is incompatible with FFmpeg %d (expected %d)",
+			abi.ErrUnsupported, swscaleVersion()>>16, currentABI.FFmpegMajor, currentABI.SWScaleMajor)
 	}
 
 	return nil
@@ -277,6 +284,33 @@ func SWScaleVersion() uint32 {
 	return swscaleVersion()
 }
 
+// ABI returns the structure layout selected from the loaded FFmpeg libraries.
+// It returns the zero value if the libraries have not loaded successfully.
+func ABI() abi.Layout {
+	if !loaded {
+		return abi.Layout{}
+	}
+	return currentABI
+}
+
+// ValidateLibraryVersion verifies that an optional FFmpeg library belongs to
+// the same release family as the already loaded core libraries.
+func ValidateLibraryVersion(name string, version uint32) error {
+	if err := Load(); err != nil {
+		return err
+	}
+	expected, ok := currentABI.LibraryMajor(name)
+	if !ok {
+		return fmt.Errorf("ffgo: unknown FFmpeg library %q", name)
+	}
+	actual := int(version >> 16)
+	if actual != expected {
+		return fmt.Errorf("%w: lib%s %d is incompatible with FFmpeg %d (expected %d)",
+			abi.ErrUnsupported, name, actual, currentABI.FFmpegMajor, expected)
+	}
+	return nil
+}
+
 // LibAVUtil returns the avutil library handle.
 func LibAVUtil() uintptr {
 	return libAVUtil
@@ -297,19 +331,9 @@ func LibSWScale() uintptr {
 	return libSWScale
 }
 
-// LibFFShim returns the ffshim library handle.
-func LibFFShim() uintptr {
-	return libFFShim
-}
-
 // HasSWScale returns true if swscale library is available.
 func HasSWScale() bool {
 	return libSWScale != 0
-}
-
-// HasFFShim returns true if the ffshim library is available.
-func HasFFShim() bool {
-	return libFFShim != 0
 }
 
 // LoadLibrary loads a library by name, trying the specified versions.

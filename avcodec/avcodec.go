@@ -11,7 +11,6 @@ import (
 	"github.com/ebitengine/purego"
 	"github.com/obinnaokechukwu/ffgo/avutil"
 	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	ffshim "github.com/obinnaokechukwu/ffgo/internal/shim"
 )
 
 // Codec is an opaque FFmpeg AVCodec pointer.
@@ -74,6 +73,7 @@ func registerBindings() {
 	if lib == 0 {
 		return
 	}
+	setABIOffsets()
 
 	purego.RegisterLibFunc(&avcodecFindDecoder, lib, "avcodec_find_decoder")
 	purego.RegisterLibFunc(&avcodecFindEncoder, lib, "avcodec_find_encoder")
@@ -325,10 +325,8 @@ func ParametersCopy(dst, src Parameters) error {
 	return nil
 }
 
-// AVCodecParameters struct field offsets
-const (
-	offsetCodecParTag = 8 // codec_tag at offset 8 (after codec_type and codec_id)
-)
+// AVCodecParameters fields used directly by this package.
+var offsetCodecParTag uintptr
 
 // SetCodecParTag sets the codec tag in codec parameters.
 // Setting to 0 allows the muxer to choose an appropriate tag.
@@ -533,35 +531,44 @@ const (
 	PacketFlagDiscard = 0x0004 // AV_PKT_FLAG_DISCARD - Flag is used to discard packets
 )
 
-// AVCodecContext struct field offsets (for FFmpeg 6.x / avcodec 60.x)
-// Verified with offsetof() - IMPORTANT: These offsets vary between FFmpeg versions!
-const (
-	offsetCtxCodecType   = 12  // enum AVMediaType codec_type
-	offsetCtxCodecID     = 24  // enum AVCodecID codec_id
-	offsetCtxBitRate     = 56  // int64_t bit_rate
-	offsetCtxFlags       = 76  // int flags
-	offsetCtxTimeBase    = 100 // AVRational time_base
-	offsetCtxWidth       = 116 // int width
-	offsetCtxHeight      = 120 // int height
-	offsetCtxGopSize     = 132 // int gop_size
-	offsetCtxPixFmt      = 136 // enum AVPixelFormat pix_fmt
-	offsetCtxMaxBFrames  = 160 // int max_b_frames
-	offsetCtxSampleRate  = 352 // int sample_rate
-	offsetCtxSampleFmt   = 360 // enum AVSampleFormat sample_fmt
-	offsetCtxFrameSize   = 364 // int frame_size
-	offsetCtxFramerate   = 704 // AVRational framerate
-	offsetCtxHWFramesCtx = 840 // AVBufferRef *hw_frames_ctx
-	offsetCtxHWDeviceCtx = 864 // AVBufferRef *hw_device_ctx
-	offsetCtxChLayout    = 912 // AVChannelLayout ch_layout (FFmpeg 5.1+)
+// AVCodecContext field offsets are selected from the runtime FFmpeg ABI.
+var (
+	offsetCtxCodecType, offsetCtxCodecID, offsetCtxBitRate         uintptr
+	offsetCtxFlags, offsetCtxTimeBase                              uintptr
+	offsetCtxWidth, offsetCtxHeight, offsetCtxGopSize              uintptr
+	offsetCtxPixFmt, offsetCtxMaxBFrames                           uintptr
+	offsetCtxSampleRate, offsetCtxSampleFmt, offsetCtxFrameSize    uintptr
+	offsetCtxFramerate, offsetCtxHWFramesCtx, offsetCtxHWDeviceCtx uintptr
+	offsetCtxChLayout                                              uintptr
 )
+
+func setABIOffsets() {
+	layout := bindings.ABI()
+	offsetCodecParTag = layout.CodecParameters.CodecTag
+	context := layout.CodecContext
+	offsetCtxCodecType = context.CodecType
+	offsetCtxCodecID = context.CodecID
+	offsetCtxBitRate = context.BitRate
+	offsetCtxFlags = context.Flags
+	offsetCtxTimeBase = context.TimeBase
+	offsetCtxWidth = context.Width
+	offsetCtxHeight = context.Height
+	offsetCtxGopSize = context.GOPSize
+	offsetCtxPixFmt = context.PixelFormat
+	offsetCtxMaxBFrames = context.MaxBFrames
+	offsetCtxSampleRate = context.SampleRate
+	offsetCtxSampleFmt = context.SampleFormat
+	offsetCtxFrameSize = context.FrameSize
+	offsetCtxFramerate = context.FrameRate
+	offsetCtxHWFramesCtx = context.HWFramesContext
+	offsetCtxHWDeviceCtx = context.HWDeviceContext
+	offsetCtxChLayout = context.ChannelLayout
+}
 
 // GetCtxWidth returns the width from codec context.
 func GetCtxWidth(ctx Context) int32 {
 	if ctx == nil {
 		return 0
-	}
-	if v, err := ffshim.CodecCtxWidth(ctx); err == nil {
-		return v
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth))
 }
@@ -569,9 +576,6 @@ func GetCtxWidth(ctx Context) int32 {
 // SetCtxWidth sets the width in codec context.
 func SetCtxWidth(ctx Context, width int32) {
 	if ctx == nil {
-		return
-	}
-	if err := ffshim.CodecCtxSetWidth(ctx, width); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxWidth)) = width
@@ -582,18 +586,12 @@ func GetCtxHeight(ctx Context) int32 {
 	if ctx == nil {
 		return 0
 	}
-	if v, err := ffshim.CodecCtxHeight(ctx); err == nil {
-		return v
-	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight))
 }
 
 // SetCtxHeight sets the height in codec context.
 func SetCtxHeight(ctx Context, height int32) {
 	if ctx == nil {
-		return
-	}
-	if err := ffshim.CodecCtxSetHeight(ctx, height); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxHeight)) = height
@@ -604,9 +602,6 @@ func GetCtxPixFmt(ctx Context) int32 {
 	if ctx == nil {
 		return -1
 	}
-	if v, err := ffshim.CodecCtxPixFmt(ctx); err == nil {
-		return v
-	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt))
 }
 
@@ -615,18 +610,12 @@ func SetCtxPixFmt(ctx Context, fmt int32) {
 	if ctx == nil {
 		return
 	}
-	if err := ffshim.CodecCtxSetPixFmt(ctx, fmt); err == nil {
-		return
-	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxPixFmt)) = fmt
 }
 
 // SetCtxTimeBase sets the time base in codec context.
 func SetCtxTimeBase(ctx Context, num, den int32) {
 	if ctx == nil {
-		return
-	}
-	if err := ffshim.CodecCtxSetTimeBase(ctx, num, den); err == nil {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase)) = num
@@ -703,9 +692,6 @@ func SetCtxFramerate(ctx Context, num, den int32) {
 	if ctx == nil {
 		return
 	}
-	if err := ffshim.CodecCtxSetFramerate(ctx, num, den); err == nil {
-		return
-	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate)) = num
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate + 4)) = den
 }
@@ -739,9 +725,6 @@ func SetCtxSampleRate(ctx Context, sampleRate int32) {
 	if err := avutil.OptSetInt(ctx, "sample_rate", int64(sampleRate), 0); err == nil {
 		return
 	}
-	if runtime.GOOS == "darwin" {
-		return
-	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleRate)) = sampleRate
 }
 
@@ -761,29 +744,12 @@ func GetCtxSampleFmt(ctx Context) int32 {
 		return -1
 	}
 
-	// Prefer shim-based field access when available (avoids struct-layout assumptions).
-	_ = ffshim.Load()
-	if v, err := ffshim.CodecCtxSampleFmt(ctx); err == nil {
-		return v
-	}
-
-	// Fallback: legacy offset read. Avoid on macOS where FFmpeg struct layouts can differ.
-	if runtime.GOOS == "darwin" {
-		return -1
-	}
 	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt))
 }
 
 // SetCtxSampleFmt sets the sample format in codec context.
 func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
 	if ctx == nil {
-		return
-	}
-
-	// Best-effort: if the shim is available, set the field directly.
-	// This fixes platforms where AVOptions setting is insufficient and avoids struct offsets.
-	_ = ffshim.Load()
-	if err := ffshim.CodecCtxSetSampleFmt(ctx, sampleFmt); err == nil {
 		return
 	}
 
@@ -800,9 +766,6 @@ func SetCtxSampleFmt(ctx Context, sampleFmt int32) {
 		return
 	}
 	if err := avutil.OptSetInt(ctx, "sample_fmt", int64(sampleFmt), avutil.AV_OPT_SEARCH_CHILDREN); err == nil {
-		return
-	}
-	if runtime.GOOS == "darwin" {
 		return
 	}
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxSampleFmt)) = sampleFmt
@@ -878,73 +841,20 @@ const (
 )
 
 // SetCtxChannelLayout sets the channel layout for audio in codec context.
-// This manually sets the AVChannelLayout struct fields for FFmpeg 5.1+.
 func SetCtxChannelLayout(ctx Context, nbChannels int32) {
 	if ctx == nil {
 		return
 	}
-
-	// Best-effort: if the shim is available, use it to set AVCodecContext->ch_layout
-	// via FFmpeg APIs (avoids all struct offset issues on FFmpeg 7+).
-	_ = ffshim.Load()
-	shimOK := ffshim.CodecCtxSetChLayoutDefault(ctx, nbChannels) == nil
-
-	// Also set the (legacy) channel count via AVOptions for encoders that still consult it.
-	_ = avutil.OptSetInt(ctx, "ac", int64(nbChannels), 0)
-	_ = avutil.OptSetInt(ctx, "channels", int64(nbChannels), 0)
-	if shimOK {
-		return
-	}
-
-	var layout string
-	switch nbChannels {
-	case 1:
-		layout = "mono"
-	case 2:
-		layout = "stereo"
-	case 6:
-		layout = "5.1"
-	}
-	if layout != "" {
-		if err := avutil.OptSet(ctx, "ch_layout", layout, 0); err == nil {
-			return
-		}
-		if err := avutil.OptSet(ctx, "channel_layout", layout, 0); err == nil {
-			return
-		}
-	}
-
-	// Fallback: legacy direct struct writes (best-effort). Avoid on macOS where FFmpeg
-	// struct layouts commonly differ from hardcoded offsets and can corrupt the context.
-	if runtime.GOOS == "darwin" {
-		return
-	}
-
-	chLayoutPtr := uintptr(ctx) + offsetCtxChLayout
-	*(*int32)(unsafe.Pointer(chLayoutPtr)) = ChannelOrderNative
-	*(*int32)(unsafe.Pointer(chLayoutPtr + 4)) = nbChannels
-
-	var mask uint64
-	switch nbChannels {
-	case 1:
-		mask = ChannelLayoutMaskMono
-	case 2:
-		mask = ChannelLayoutMaskStereo
-	case 6:
-		mask = ChannelLayoutMask5Point1
-	default:
-		mask = (1 << uint(nbChannels)) - 1
-	}
-	*(*uint64)(unsafe.Pointer(chLayoutPtr + 8)) = mask
+	avutil.ChannelLayoutDefault(
+		unsafe.Pointer(uintptr(ctx)+offsetCtxChLayout),
+		nbChannels,
+	)
 }
 
 // GetCtxTimeBase returns the time base from codec context.
 func GetCtxTimeBase(ctx Context) avutil.Rational {
 	if ctx == nil {
 		return avutil.Rational{}
-	}
-	if num, den, err := ffshim.CodecCtxTimeBase(ctx); err == nil {
-		return avutil.NewRational(num, den)
 	}
 	num := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase))
 	den := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4))
@@ -1024,13 +934,6 @@ func GetCtxHWDeviceCtx(ctx Context) avutil.HWDeviceContext {
 	if ctx == nil {
 		return nil
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.CodecCtxHWDeviceCtx(ctx); err == nil {
-		return v
-	}
-	if runtime.GOOS == "darwin" {
-		return nil
-	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx))
 }
 
@@ -1042,13 +945,6 @@ func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) {
 	}
 	// Create a new reference to the buffer
 	ref := avutil.NewBufferRef(hwDeviceCtx)
-	_ = ffshim.Load()
-	if err := ffshim.CodecCtxSetHWDeviceCtx(ctx, ref); err == nil {
-		return
-	}
-	if runtime.GOOS == "darwin" {
-		return
-	}
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx)) = ref
 }
 
@@ -1079,13 +975,6 @@ func GetCtxHWFramesCtx(ctx Context) avutil.HWFramesContext {
 	if ctx == nil {
 		return nil
 	}
-	_ = ffshim.Load()
-	if v, err := ffshim.CodecCtxHWFramesCtx(ctx); err == nil {
-		return v
-	}
-	if runtime.GOOS == "darwin" {
-		return nil
-	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx))
 }
 
@@ -1095,12 +984,5 @@ func SetCtxHWFramesCtx(ctx Context, hwFramesCtx avutil.HWFramesContext) {
 		return
 	}
 	ref := avutil.NewBufferRef(hwFramesCtx)
-	_ = ffshim.Load()
-	if err := ffshim.CodecCtxSetHWFramesCtx(ctx, ref); err == nil {
-		return
-	}
-	if runtime.GOOS == "darwin" {
-		return
-	}
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx)) = ref
 }
