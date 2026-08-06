@@ -25,7 +25,7 @@ var (
 	swr_alloc           func() uintptr
 	swr_init            func(s uintptr) int32
 	swr_free            func(s *SwrContext)
-	swr_convert         func(s, out, in uintptr, outCount, inCount int32) int32
+	swr_convert         func(s, out uintptr, outCount int32, in uintptr, inCount int32) int32
 	swr_convert_frame   func(s, output, input uintptr) int32
 	swr_get_delay       func(s uintptr, base int64) int64
 	swr_get_out_samples func(s uintptr, inSamples int32) int32
@@ -158,7 +158,7 @@ func Convert(s SwrContext, out unsafe.Pointer, outCount int32,
 	if err := Init(); err != nil {
 		return 0, err
 	}
-	ret := swr_convert(uintptr(s), uintptr(out), uintptr(in), outCount, inCount)
+	ret := swr_convert(uintptr(s), uintptr(out), outCount, uintptr(in), inCount)
 	runtime.KeepAlive(out)
 	runtime.KeepAlive(in)
 	if ret < 0 {
