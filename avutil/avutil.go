@@ -227,7 +227,8 @@ const (
 	offsetPts = 136 // int64 pts at offset 136
 
 	// Audio fields
-	offsetSampleRate = 216 // int sample_rate at offset 216 (FFmpeg 6.x)
+	offsetSampleRate = 208 // int sample_rate at offset 208 (FFmpeg 6.x)
+	offsetChLayout   = 448 // AVChannelLayout ch_layout at offset 448 (FFmpeg 6.x)
 )
 
 // GetFrameWidth returns the width of the frame.
@@ -331,15 +332,14 @@ func FrameSetSampleRate(frame Frame, sampleRate int32) {
 	SetFrameSampleRate(frame, sampleRate)
 }
 
-// FrameSetChannels sets the number of audio channels in the frame.
-// Note: In FFmpeg 5.1+, this should be done via AVChannelLayout, but we support legacy mode.
-const offsetChannels = 148 // nb_channels in FFmpeg 5.x+ (via ch_layout.nb_channels)
-
+// FrameSetChannels sets a default channel layout for the requested number of
+// channels. FFmpeg 5.1 and newer require the complete AVChannelLayout rather
+// than only its nb_channels field.
 func FrameSetChannels(frame Frame, channels int32) {
 	if frame == nil {
 		return
 	}
-	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetChannels)) = channels
+	ChannelLayoutDefault(unsafe.Pointer(uintptr(frame)+offsetChLayout), channels)
 }
 
 // GetFrameChannels returns the number of audio channels.
@@ -347,7 +347,7 @@ func GetFrameChannels(frame Frame) int32 {
 	if frame == nil {
 		return 0
 	}
-	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChannels))
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChLayout + 4))
 }
 
 // FrameSetFormat is an alias for SetFrameFormat

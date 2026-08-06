@@ -88,6 +88,32 @@ func TestFrameAllocAndSetup(t *testing.T) {
 	}
 }
 
+func TestAudioFrameAllocAndSetup(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	frame := FrameAlloc()
+	if frame == nil {
+		t.Fatal("FrameAlloc returned nil")
+	}
+	defer FrameFree(&frame)
+
+	FrameSetSampleRate(frame, 48000)
+	FrameSetChannels(frame, 2)
+	FrameSetFormat(frame, int32(SampleFormatS16))
+	FrameSetNbSamples(frame, 1024)
+
+	if got := GetFrameSampleRate(frame); got != 48000 {
+		t.Fatalf("sample rate = %d, want 48000", got)
+	}
+	if got := GetFrameChannels(frame); got != 2 {
+		t.Fatalf("channels = %d, want 2", got)
+	}
+	if err := FrameGetBufferErr(frame, 0); err != nil {
+		t.Fatalf("allocate audio frame buffer: %v", err)
+	}
+}
+
 func TestRational(t *testing.T) {
 	// Test basic creation
 	r := NewRational(30000, 1001)
