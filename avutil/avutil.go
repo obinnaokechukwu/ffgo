@@ -642,19 +642,12 @@ func goString(ptr unsafe.Pointer) string {
 	if ptr == nil {
 		return ""
 	}
-	var length int
-	for {
-		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
-		if b == 0 {
-			break
-		}
-		length++
-		if length > 256 {
-			break
-		}
+	// The length is the terminator's, as strlen finds it: FFmpeg's strings
+	// are NUL-terminated, and a fixed-size array here both cut a long value
+	// short and, at one byte past its limit, sliced out of bounds.
+	n := 0
+	for *(*byte)(unsafe.Add(ptr, n)) != 0 {
+		n++
 	}
-	if length == 0 {
-		return ""
-	}
-	return string((*[256]byte)(ptr)[:length:length])
+	return string(unsafe.Slice((*byte)(ptr), n))
 }
